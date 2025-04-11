@@ -187,15 +187,11 @@ def convert_imagenet1kcaption_to_wds(output_dir, max_train_samples_per_shard, ma
         token=True
     )
     
-    # Get the iterator directly
-    iterator = iter(dataset)
-    
-    # Fast forward to the starting index
-    for _ in range(start_train_idx):
-        next(iterator, None)
+    # Skip to the last processed index
+    dataset = dataset.skip(start_train_idx)
     
     now = time.time()
-    for i, example in enumerate(iterator, start=start_train_idx):
+    for i, example in enumerate(dataset, start=start_train_idx):
         if i % max_train_samples_per_shard == 0:
             print(f"Processing training example {i}", file=sys.stderr)
         
@@ -211,16 +207,16 @@ def convert_imagenet1kcaption_to_wds(output_dir, max_train_samples_per_shard, ma
                 continue
                 
             # Write to WebDataset format    
-            output.write({
-                "__key__": "%08d" % i,
-                "jpg": img.convert("RGB"),
-                "txt": caption[0] if caption else "",  # Use first caption if available
-                "cls": example.get("label", -1),  # Use -1 if label doesn't exist
-                "id": id
-            })
         except Exception as e:
             print(f"Error processing image with id {hash(id)}: {str(e)}")
             continue
+        output.write({
+            "__key__": "%08d" % i,
+            "jpg": img.convert("RGB"),
+            "txt": caption[0] if caption else "",  # Use first caption if available
+            "cls": example.get("label", -1),  # Use -1 if label doesn't exist
+            "id": id
+        })
     
     output.close()
     time_taken = time.time() - now
@@ -242,40 +238,27 @@ def convert_imagenet1kcaption_to_wds(output_dir, max_train_samples_per_shard, ma
         token=True
     )
     
-    # Get the iterator directly
-    iterator = iter(dataset)
-    
-    # Fast forward to the starting index
-    for _ in range(start_val_idx):
-        next(iterator, None)
+    # Skip to the last processed index
+    dataset = dataset.skip(start_val_idx)
     
     now = time.time()
-    for i, example in enumerate(iterator, start=start_val_idx):
+    for i, example in enumerate(dataset, start=start_val_idx):
         if i % max_val_samples_per_shard == 0:
             print(f"Processing validation example {i}", file=sys.stderr)
         
-        try:
-            # Get image and captions
-            id = example["image_id"]
-            img = example["image"]
-            caption = example.get("caption_enriched", [])
-            
-            # Skip if image is corrupt
-            if img is None:
-                print(f"Skipping corrupt image with id: {hash(id)}")
-                continue
-                
-            # Write to WebDataset format    
-            output.write({
-                "__key__": "%08d" % i,
-                "jpg": img.convert("RGB"),
-                "txt": caption[0] if caption else "",  # Use first caption if available
-                "cls": example.get("label", -1),  # Use -1 if label doesn't exist
-                "id": id
-            })
-        except Exception as e:
-            print(f"Error processing image with id {hash(id)}: {str(e)}")
-            continue
+        # Get image and captions
+        id = example["image_id"]
+        img = example["image"]
+        caption = example.get("caption_enriched", [])
+        
+        # Write to WebDataset format    
+        output.write({
+            "__key__": "%08d" % i,
+            "jpg": img.convert("RGB"),
+            "txt": caption[0] if caption else "",  # Use first caption if available
+            "cls": example.get("label", -1),  # Use -1 if label doesn't exist
+            "id": id
+        })
     
     output.close()
     time_taken = time.time() - now
@@ -392,4 +375,4 @@ if __name__ == "__main__":
     elif args.dataset == "imagenet1k-caption":
         convert_imagenet1kcaption_to_wds(args.output_dir, args.max_train_samples_per_shard, args.max_val_samples_per_shard)
     else:
-    convert_imagenet_to_wds(args.output_dir, args.max_train_samples_per_shard, args.max_val_samples_per_shard)
+        convert_imagenet_to_wds(args.output_dir, args.max_train_samples_per_shard, args.max_val_samples_per_shard)
