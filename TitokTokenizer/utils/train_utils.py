@@ -33,6 +33,7 @@ from utils.lr_schedulers import get_scheduler
 from modeling.modules import EMAModel, ReconstructionLoss_Stage1, ReconstructionLoss_Stage2, ReconstructionLoss_Single_Stage, MLMLoss, ARLoss
 from modeling.titok import TiTok, PretrainedTokenizer
 from modeling.tatitok import TATiTok
+from modeling.textok import Textok
 from modeling.maskgit import ImageBert, UViTBert
 from modeling.rar import RAR
 from modeling.maskgen import MaskGen_VQ, MaskGen_KL, open_clip_text_encoding
@@ -108,6 +109,9 @@ def create_model_and_loss_module(config, logger, accelerator,
     elif model_type == "tatitok":
         model_cls = TATiTok
         loss_cls = ReconstructionLoss_Single_Stage
+    elif model_type == "textok":
+        model_cls = Textok
+        loss_cls = ReconstructionLoss_Stage2
     elif model_type == "maskgit":
         if config.model.generator.model_type == "ViT":
             model_cls = ImageBert

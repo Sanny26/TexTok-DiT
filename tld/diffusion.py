@@ -1,6 +1,6 @@
 from dataclasses import dataclass, asdict
 
-# import clip
+import clip
 from transformers import CLIPProcessor, CLIPModel
 
 import numpy as np
@@ -33,7 +33,7 @@ class DiffusionGenerator:
     @torch.no_grad()
     def generate(
         self,
-        labels: Tensor,  # embeddings to condition on
+        labels: Tensor,  # embeddings to condition on num_imgs x 768
         n_iter: int = 30,
         num_imgs: int = 16,
         class_guidance: float = 3,
@@ -170,7 +170,7 @@ class DiffusionGenerator1D:
         x_t = self.initialize_image(seeds, num_imgs, n_tokens, seed) #change to init tokens?
         print(f'generate func - {x_t.shape}, {seeds}') #should be of the shape B x 1 x 32 ?
 
-        labels = torch.cat([labels, torch.zeros_like(labels)])
+        labels = torch.cat([labels, torch.zeros_like(labels)]) # 2B x 768
         self.model.eval()
 
         x0_pred_prev = None
@@ -212,6 +212,7 @@ class DiffusionGenerator1D:
     def pred_image(self, noisy_latent, labels, noise_level, class_guidance):
         num_imgs = noisy_latent.size(0)
         noises = torch.full((2 * num_imgs, 1), noise_level) # noiselevel - timestep??
+        import pdb; pdb.set_trace()
         x0_pred = self.model(
             torch.cat([noisy_latent, noisy_latent]),
             noises.to(self.device, self.model_dtype),
@@ -272,10 +273,10 @@ class DiffusionTransformer:
 
         denoiser = denoiser.to(device)
 
-        # self.clip_model, preprocess = clip.load(cfg.clip_cfg.clip_model_name)
-        # self.clip_model = self.clip_model.to(device)
-        self.clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
-        self.clip_preprocess = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+        self.clip_model, preprocess = clip.load(cfg.clip_cfg.clip_model_name)
+        self.clip_model = self.clip_model.to(device)
+        # self.clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
+        # self.clip_preprocess = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
 
         if cfg.use_textok:
             print('Using Textok!')
@@ -286,7 +287,10 @@ class DiffusionTransformer:
                                                  cfg.denoiser_load.dtype)
         elif cfg.use_titok:
             print('Using Titok!')
-            titok = TiTok(cfg.titok_cfg, device).to(device)
+            # titok = TiTok(cfg.titok_cfg, device).to(device)
+            titok = TiTok.from_pretrained("yucornetto/tokenizer_titok_l32_imagenet")
+            if device.type == "cuda":
+                titok = titok.to(device)
             self.diffuser = DiffusionGenerator1D(denoiser,
                                                  titok,
                                                  device,
@@ -302,9 +306,10 @@ class DiffusionTransformer:
         nrow = int(np.sqrt(num_imgs))
 
         cur_prompts = [prompt] * num_imgs
-        # labels = encode_text(cur_prompts, self.clip_model)
-        labels = self.clip_preprocess(text=cur_prompts).input_ids.to(device)
-        
+        # # labels = encode_text(cur_prompts, self.clip_model)
+        # import pdb; pdb.set_trace()
+        # labels = self.clip_preprocess(text=cur_prompts).input_ids.to(device)
+        labels  = encode_text(cur_prompts, self.clip_model)
         out, out_latent = self.diffuser.generate(
             prompts=cur_prompts,
             labels=labels,
@@ -336,7 +341,7 @@ if __name__ == "__main__":
         prompt=prompt,
         class_guidance=6,
         seed=42,
-        num_imgs=3,
+        num_imgs=16,
         n_iter=15,
     )
 

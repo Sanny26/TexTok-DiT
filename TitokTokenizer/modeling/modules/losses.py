@@ -25,8 +25,10 @@ import torch.nn.functional as F
 from einops import rearrange
 from torch.cuda.amp import autocast
 
-from TitokTokenizer.modeling.diffusion import create_diffusion
-from TitokTokenizer.modeling.modules.blocks import SimpleMLPAdaLN
+# from TitokTokenizer.modeling.diffusion import create_diffusion
+# from TitokTokenizer.modeling.modules.blocks import SimpleMLPAdaLN
+from modeling.diffusion import create_diffusion
+from modeling.modules.blocks import SimpleMLPAdaLN
 from .perceptual_loss import PerceptualLoss
 from .discriminator import NLayerDiscriminator
 

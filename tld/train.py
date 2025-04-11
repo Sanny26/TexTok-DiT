@@ -77,7 +77,8 @@ def eval_gen_1D(diffuser: DiffusionGenerator1D, labels: Tensor, n_tokens: int) -
     class_guidance = 4.5
     seed = 10
     out, _ = diffuser.generate(
-        labels=torch.repeat_interleave(labels, 2, dim=0),
+        # labels=torch.repeat_interleave(labels, 2, dim=0),
+        labels=labels, (num_imgs x 768)
         num_imgs=16,
         class_guidance=class_guidance,
         seed=seed,
@@ -145,12 +146,20 @@ def main(config: ModelConfig) -> None:
             transforms.Resize((256, 256)),
             # transforms.ToTensor()
         ])
-        train_dataset = COCODataset(img_dir="/home/tchoudha/coco2017/train2017",
-                            ann_file="/home/tchoudha/coco2017/annotations/captions_train2017.json", 
+        # train_dataset = COCODataset(img_dir="/home/tchoudha/coco2017/train2017",
+        #                     ann_file="/home/tchoudha/coco2017/annotations/captions_train2017.json", 
+        #                     transform=transform)
+        
+        # val_dataset = COCODataset(img_dir="/home/tchoudha/coco2017/val2017",
+        #                     ann_file="/home/tchoudha/coco2017/annotations/captions_val2017.json", 
+        #                     transform=transform)
+
+        train_dataset = COCODataset(img_dir="../coco/val2017",
+                            ann_file="../coco/annotations/captions_val2017.json", 
                             transform=transform)
         
-        val_dataset = COCODataset(img_dir="/home/tchoudha/coco2017/val2017",
-                            ann_file="/home/tchoudha/coco2017/annotations/captions_val2017.json", 
+        val_dataset = COCODataset(img_dir="../coco/val2017",
+                            ann_file="../coco/annotations/captions_val2017.json", 
                             transform=transform)
         
         train_loader = DataLoader(train_dataset, batch_size=train_config.batch_size, shuffle=True)
@@ -163,7 +172,8 @@ def main(config: ModelConfig) -> None:
         txt_inputs_val = clip_preprocess(text=("a cute grey great owl"), return_tensors="pt", padding=True).to(accelerator.device)
         emb_val = clip_model.get_text_features(**txt_inputs_val)
         emb_val = torch.nn.functional.normalize(emb_val, dim=-1)
-        emb_val = txt_emb_projector(emb_val)
+        emb_val = txt_emb_projector(emb_val) # B x 768
+        # import pdb; pdb.set_trace()
     
     else:
         latent_train_data = torch.tensor(np.load(dataconfig.latent_path), dtype=torch.float32)

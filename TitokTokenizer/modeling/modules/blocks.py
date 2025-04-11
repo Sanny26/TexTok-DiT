@@ -291,7 +291,55 @@ class TiTokEncoder(nn.Module):
         latent_tokens = self.conv_out(latent_tokens)
         latent_tokens = latent_tokens.reshape(batch_size, self.token_size, 1, self.num_latent_tokens)
         return latent_tokens
-    
+
+
+class TexTokEncoder(TiTokEncoder):
+    def __init__(self, config):
+        super().__init__(config)
+        # sane model param changes as Titok + a token projection layer
+        self.text_tok_proj = nn.Linear(config.model.vq_model.text_embed_dim, self.width)
+
+    def forward(self, pixel_values, latent_tokens, text_guidance):
+        '''text guidance should be N x L x D from t5 encoder'''
+        batch_size = pixel_values.shape[0]
+        x = pixel_values
+        x = self.patch_embed(x)
+        x = x.reshape(x.shape[0], x.shape[1], -1)
+        x = x.permute(0, 2, 1) # shape = [*, grid ** 2, width]
+        # class embeddings and positional embeddings
+        x = torch.cat([_expand_token(self.class_embedding, x.shape[0]).to(x.dtype), x], dim=1)
+        x = x + self.positional_embedding.to(x.dtype) # shape = [*, grid ** 2 + 1, width]
+        
+
+        text_tok_proj = self.text_tok_proj(text_guidance)
+        # import pdb; pdb.set_trace()
+        # text_tok_proj = text_tok_proj + self.text_guidance_positional_embedding
+        x = torch.cat([x, text_tok_proj], dim=1)  # shape = [*, grid ** 2 + 1 + Text Context Length, width]
+
+        latent_tokens_pos = x.shape[1] 
+        latent_tokens = _expand_token(latent_tokens, x.shape[0]).to(x.dtype)
+        latent_tokens = latent_tokens + self.latent_token_positional_embedding.to(x.dtype)
+        x = torch.cat([x, latent_tokens], dim=1)
+
+        x = self.ln_pre(x)
+        x = x.permute(1, 0, 2)  # NLD -> LND
+        for i in range(self.num_layers):
+            x = self.transformer[i](x)
+        x = x.permute(1, 0, 2)  # LND -> NLD
+        
+        latent_tokens = x[:, latent_tokens_pos:]
+        latent_tokens = self.ln_post(latent_tokens)
+        # fake 2D shape
+        if self.is_legacy:
+            latent_tokens = latent_tokens.reshape(batch_size, self.width, self.num_latent_tokens, 1)
+        else:
+            # Fix legacy problem.
+            latent_tokens = latent_tokens.reshape(batch_size, self.num_latent_tokens, self.width, 1).permute(0, 2, 1, 3)
+        latent_tokens = self.conv_out(latent_tokens)
+        latent_tokens = latent_tokens.reshape(batch_size, self.token_size, 1, self.num_latent_tokens)
+        return latent_tokens
+
+
 
 class TiTokDecoder(nn.Module):
     def __init__(self, config):

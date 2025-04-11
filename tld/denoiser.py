@@ -105,6 +105,7 @@ class Denoiser(nn.Module):
         # print(label.shape)
 
         # TODO: check if this okay : B X D X N 
+        import pdb; pdb.set_trace()
         x = x.permute(0, 2, 1)
         noise_level = self.fourier_feats(noise_level).unsqueeze(1)
 
