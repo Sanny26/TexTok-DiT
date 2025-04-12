@@ -29,6 +29,8 @@ class DenoiserConfig:
     text_emb_size: int = 512  # CLIP embedding size
     n_channels: int = 12  # Latent token dimension
     mlp_multiplier: int = 4
+    image_emb_size: int | None = 768
+    super_res: bool = True
 
 @dataclass
 class DenoiserLoad:
@@ -109,6 +111,7 @@ class ModelConfig:
     use_textok: bool = False
     use_titok: bool = True
     use_image_data: bool = True
+    latents_path: str = "/home/11777/TexTok-DiT/preprocess.npz"
 
 if __name__=='__main__':
     cfg = DenoiserConfig()
