@@ -18,8 +18,7 @@ limitations under the License.
 import torch
 from einops import rearrange
 
-print('asdasd')
-from titok import TiTok
+from modeling.titok import TiTok
 from modeling.modules.blocks import TATiTokDecoder, TexTokEncoder
 from modeling.quantizer.quantizer import VectorQuantizer, DiagonalGaussianDistribution
 from omegaconf import OmegaConf

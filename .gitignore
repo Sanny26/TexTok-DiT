@@ -3,3 +3,6 @@ build
 
 *_cache
 *.egg-info/
+
+TitokTokenizer/*/*_run3
+TitokTokenizer/wandb/*

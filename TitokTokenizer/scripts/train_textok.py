@@ -52,7 +52,7 @@ def main():
     output_dir = config.experiment.output_dir
     os.makedirs(output_dir, exist_ok=True)
     config.experiment.logging_dir = os.path.join(output_dir, "logs")
-
+    print(f"Logging to {config.experiment.logging_dir}")
     # Whether logging to Wandb or Tensorboard.
     tracker = "tensorboard"
     if config.training.enable_wandb:
@@ -65,6 +65,7 @@ def main():
         project_dir=config.experiment.logging_dir,
         split_batches=False,
     )
+    print(f"Accelerator: {accelerator}")
 
     logger = setup_logger(name="Tex-Tok", log_level="INFO",
      output_file=f"{output_dir}/log{accelerator.process_index}.txt")

@@ -176,6 +176,48 @@ def convert_imagenet1kcaption_to_wds(output_dir, max_train_samples_per_shard, ma
     last_train_shard = get_last_shard_number(train_pattern)
     start_train_idx = (last_train_shard + 1) * max_train_samples_per_shard if last_train_shard >= 0 else 0
 
+    # # Validation set
+    # val_pattern = os.path.join(output_dir, "imagenet1k-val-*.tar")
+    # last_val_shard = get_last_shard_number(val_pattern)
+    # start_val_idx = (last_val_shard + 1) * max_val_samples_per_shard if last_val_shard >= 0 else 0
+
+    # print(f"Starting validation set from index {start_val_idx}")
+    # opat = os.path.join(output_dir, "imagenet1k-val-%06d.tar")
+    # output = wds.ShardWriter(opat, maxcount=max_val_samples_per_shard)
+    
+    # dataset = load_dataset(
+    #     "visual-layer/imagenet-1k-vl-enriched",
+    #     streaming=True,
+    #     split="validation",
+    #     token=True
+    # )
+    
+    # # Skip to the last processed index
+    # dataset = dataset.skip(start_val_idx)
+    
+    # now = time.time()
+    # for i, example in enumerate(dataset, start=start_val_idx):
+    #     if i % max_val_samples_per_shard == 0:
+    #         print(f"Processing validation example {i}", file=sys.stderr)
+        
+    #     # Get image and captions
+    #     id = example["image_id"]
+    #     img = example["image"]
+    #     caption = example.get("caption_enriched", "")
+        
+    #     # Write to WebDataset format    
+    #     output.write({
+    #         "__key__": "%08d" % i,
+    #         "jpg": img.convert("RGB"),
+    #         "txt": caption,  # Use first caption if available
+    #         "cls": example.get("label", -1),  # Use -1 if label doesn't exist
+    #         "fid": id
+    #     })
+    
+    # output.close()
+    # time_taken = time.time() - now
+    # print(f"Wrote {i+1} val examples in {time_taken // 3600} hours.")
+
     print(f"Starting training set from index {start_train_idx}")
     opat = os.path.join(output_dir, "imagenet1k-train-%06d.tar")
     output = wds.ShardWriter(opat, maxcount=max_train_samples_per_shard)
@@ -191,78 +233,47 @@ def convert_imagenet1kcaption_to_wds(output_dir, max_train_samples_per_shard, ma
     dataset = dataset.skip(start_train_idx)
     
     now = time.time()
-    for i, example in enumerate(dataset, start=start_train_idx):
-        if i % max_train_samples_per_shard == 0:
-            print(f"Processing training example {i}", file=sys.stderr)
-        
+    i = start_train_idx
+    print(f"Processing training examples,starting from index {start_train_idx}")
+    iterator = iter(dataset)
+    while True:
         try:
+            example = next(iterator)
+            if i % max_train_samples_per_shard == 0:
+                print(f"Processing training example {i}", file=sys.stderr)
+            
             # Get image and captions
             id = example["image_id"]
             img = example["image"]
-            caption = example.get("caption_enriched", [])
+            caption = example.get("caption_enriched", "")
             
             # Skip if image is corrupt
             if img is None:
                 print(f"Skipping corrupt image with id: {hash(id)}")
+                i += 1
                 continue
                 
             # Write to WebDataset format    
+            output.write({
+                "__key__": "%08d" % i,
+                "jpg": img.convert("RGB"),
+                "txt": caption,  # Use first caption if available
+                "cls": example.get("label", -1),  # Use -1 if label doesn't exist
+                "fid": id
+            })
+            i += 1
+        except IndexError:
+            # Reached the end of the dataset
+            break
         except Exception as e:
             print(f"Error processing image with id {hash(id)}: {str(e)}")
+            i += 1
             continue
-        output.write({
-            "__key__": "%08d" % i,
-            "jpg": img.convert("RGB"),
-            "txt": caption[0] if caption else "",  # Use first caption if available
-            "cls": example.get("label", -1),  # Use -1 if label doesn't exist
-            "id": id
-        })
     
     output.close()
     time_taken = time.time() - now
-    print(f"Wrote {i+1} train examples in {time_taken // 3600} hours.")
+    print(f"Wrote {i} train examples in {time_taken // 3600} hours.")
 
-    # Validation set
-    val_pattern = os.path.join(output_dir, "imagenet1k-val-*.tar")
-    last_val_shard = get_last_shard_number(val_pattern)
-    start_val_idx = (last_val_shard + 1) * max_val_samples_per_shard if last_val_shard >= 0 else 0
-
-    print(f"Starting validation set from index {start_val_idx}")
-    opat = os.path.join(output_dir, "imagenet1k-val-%06d.tar")
-    output = wds.ShardWriter(opat, maxcount=max_val_samples_per_shard)
-    
-    dataset = load_dataset(
-        "visual-layer/imagenet-1k-vl-enriched",
-        streaming=True,
-        split="validation",
-        token=True
-    )
-    
-    # Skip to the last processed index
-    dataset = dataset.skip(start_val_idx)
-    
-    now = time.time()
-    for i, example in enumerate(dataset, start=start_val_idx):
-        if i % max_val_samples_per_shard == 0:
-            print(f"Processing validation example {i}", file=sys.stderr)
-        
-        # Get image and captions
-        id = example["image_id"]
-        img = example["image"]
-        caption = example.get("caption_enriched", [])
-        
-        # Write to WebDataset format    
-        output.write({
-            "__key__": "%08d" % i,
-            "jpg": img.convert("RGB"),
-            "txt": caption[0] if caption else "",  # Use first caption if available
-            "cls": example.get("label", -1),  # Use -1 if label doesn't exist
-            "id": id
-        })
-    
-    output.close()
-    time_taken = time.time() - now
-    print(f"Wrote {i+1} val examples in {time_taken // 3600} hours.")
 
 def convert_imagenet_to_wds(output_dir, max_train_samples_per_shard, max_val_samples_per_shard):
     assert not os.path.exists(os.path.join(output_dir, "imagenet-train-000000.tar"))

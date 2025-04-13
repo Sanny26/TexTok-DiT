@@ -5,7 +5,7 @@ experiment:
     max_train_examples: 685_800_000
     save_every: 50_000
     eval_every: 50_000
-    generate_every: 5_000
+    generate_every: 5_00
     log_every: 50
     log_grad_norm_every: 1_000
     resume: True
@@ -41,8 +41,8 @@ losses:
 
 dataset:
     params:
-        train_shards_path_or_url: "datacomp_sharded/train/datacomp-train-{000000..140089}.tar"
-        eval_shards_path_or_url: "imagenet_sharded/val/imagenet-val-{0000..0009}.tar"
+        train_shards_path_or_url: "/data/san/HF_datasets/imgnet-1k-caption-wds/imagenet1k-train-{000000..000160}.tar"
+        eval_shards_path_or_url: "/data/san/HF_datasets/imgnet-1k-caption-wds/imagenet1k-val-{000000..000049}.tar"
         num_workers_per_gpu: 12
         dataset_with_class_label: False
         dataset_with_text_label: True
@@ -52,6 +52,8 @@ dataset:
         random_crop: True
         random_flip: True
         res_ratio_filtering: True
+        normalize_mean: [0.485, 0.456, 0.406]
+        normalize_std: [0.229, 0.224, 0.225]
 
 optimizer:
     name: adamw 
@@ -71,7 +73,7 @@ lr_scheduler:
 
 training:
     gradient_accumulation_steps: 1
-    per_gpu_batch_size: 32
+    per_gpu_batch_size: 16
     mixed_precision: "fp16"
     enable_tf32: True
     enable_wandb: True
