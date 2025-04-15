@@ -1,7 +1,7 @@
 experiment:
-    project: "textok_bl32_vq"
-    name: "textok_bl32_vq_run1"
-    output_dir: "textok_bl32_vq_run1"
+    project: "textok_b32_vae"
+    name: "textok_b32_vae_run1"
+    output_dir: "textok_b32_vae_run1"
     max_train_examples: 685_800_000
     save_every: 10_000
     eval_every: 10_000
@@ -9,18 +9,14 @@ experiment:
     log_every: 50
     log_grad_norm_every: 1_000
     resume: True
-
+    init_tatitok: "/home/san/imtokenizer/TexTok-DiT/TitokTokenizer/checkpoints/tatitok_bl32_vae.pth"
 model:
     vq_model:
-        quantize_mode: vq
-        codebook_size: 8192
-        token_size: 64
-        use_l2_norm: False
-        commitment_cost: 0.25
-        clustering_vq: True
+        quantize_mode: vae
+        token_size: 16
         # vit arch
         vit_enc_model_size: "base"
-        vit_dec_model_size: "large"
+        vit_dec_model_size: "base"
         vit_enc_patch_size: 16
         vit_dec_patch_size: 16
         num_latent_tokens: 32
@@ -38,6 +34,8 @@ losses:
     reconstruction_loss: "l2"
     reconstruction_weight: 1.0
     lecam_regularization_weight: 0.001
+    kl_weight: 1e-6
+    logvar_init: 0.0
 
 dataset:
     params:
@@ -52,14 +50,12 @@ dataset:
         random_crop: True
         random_flip: True
         res_ratio_filtering: True
-        normalize_mean: [0.485, 0.456, 0.406]
-        normalize_std: [0.229, 0.224, 0.225]
 
 optimizer:
     name: adamw 
     params:
-        learning_rate: 5e-5
-        discriminator_learning_rate: 5e-5
+        learning_rate: 1e-4
+        discriminator_learning_rate: 1e-4
         beta1: 0.9
         beta2: 0.999
         weight_decay: 1e-4

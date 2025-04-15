@@ -64,5 +64,6 @@ class TATiTok(TiTok, PyTorchModelHubMixin, tags=["arxiv:2501.07730", "image-toke
     
     def forward(self, x, text_guidance):
         z_quantized, result_dict = self.encode(x)
+        # import pdb; pdb.set_trace()
         decoded = self.decode(z_quantized, text_guidance)
         return decoded, result_dict

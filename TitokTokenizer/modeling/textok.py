@@ -49,7 +49,6 @@ class Textok(TiTok):
 
     def encode(self, x, text_guidance):
         if self.finetune_decoder:
-            with torch.no_grad():
                 self.encoder.eval()
                 self.quantize.eval()
                 z = self.encoder(pixel_values=x, latent_tokens=self.latent_tokens, text_guidance=text_guidance)
@@ -59,6 +58,7 @@ class Textok(TiTok):
                 result_dict["codebook_loss"] *= 0
         else:
             z = self.encoder(pixel_values=x, latent_tokens=self.latent_tokens, text_guidance=text_guidance)
+            # import pdb; pdb.set_trace()
             if self.quantize_mode == "vq":
                 z_quantized, result_dict = self.quantize(z)
             elif self.quantize_mode == "vae":
@@ -67,6 +67,7 @@ class Textok(TiTok):
                 result_dict = posteriors
 
         return z_quantized, result_dict
+    
     def decode(self, z_quantized, text_guidance):
         decoded = self.decoder(z_quantized, text_guidance)
         return decoded
@@ -85,6 +86,7 @@ class Textok(TiTok):
     
     def forward(self, x, text_guidance):
         z_quantized, result_dict = self.encode(x, text_guidance)
+        # import pdb; pdb.set_trace()
         decoded = self.decode(z_quantized, text_guidance)
         return decoded, result_dict
 
@@ -100,7 +102,8 @@ def create_clip_model():
     return clip, tokenizer
 
 if __name__ == "__main__":
-    config = OmegaConf.load("configs/training/TexTok/textok_b132_vq.yaml")
+    # config = OmegaConf.load("configs/training/TexTok/textok_bl32_vq.yaml")
+    config = OmegaConf.load("configs/training/TexTok/textok_b32_vae.yaml")
     model = Textok(config)
     x = torch.randn(1, 3, 256, 256)
     text = ["a photo of a cat"]

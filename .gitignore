@@ -4,5 +4,11 @@ build
 *_cache
 *.egg-info/
 
-TitokTokenizer/*/*_run3
-TitokTokenizer/wandb/*
+__pycache__/
+*.pyc
+
+TitokTokenizer/*/*_run3/
+TitokTokenizer/wandb/
+TitokTokenizer/checkpoints/
+*_run/
+*_run3/

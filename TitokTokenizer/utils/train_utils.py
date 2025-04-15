@@ -112,7 +112,7 @@ def create_model_and_loss_module(config, logger, accelerator,
         loss_cls = ReconstructionLoss_Single_Stage
     elif model_type == "textok":
         model_cls = Textok
-        loss_cls = ReconstructionLoss_Stage2
+        loss_cls = ReconstructionLoss_Single_Stage
     elif model_type == "maskgit":
         if config.model.generator.model_type == "ViT":
             model_cls = ImageBert
@@ -148,6 +148,39 @@ def create_model_and_loss_module(config, logger, accelerator,
         
         msg = model.load_state_dict(model_weight, strict=False)
         logger.info(f"loading weight from {config.experiment.init_weight}, msg: {msg}")
+
+    if config.experiment.get("init_tatitok", "") and model_type == "textok":
+        # load weights from tatitok to textok model whenever possible
+        model_weight = model.state_dict()
+        tatitok_weight = torch.load(config.experiment.init_tatitok, map_location="cpu")
+
+        # Create a dictionary to hold the weights that should be copied
+        encoder_weight_mapping = {}
+        # Loop through the tatitok weights
+        for tatitok_key, tatitok_tensor in tatitok_weight.items():
+            # Only consider encoder weights
+            if 'encoder' in tatitok_key:
+                potential_target_key = tatitok_key
+                # Check if this key exists in model_cls
+                if potential_target_key in model_weight:
+                    # Check if the dimensions match
+                    if tatitok_tensor.shape == model_weight[potential_target_key].shape:
+                        encoder_weight_mapping[potential_target_key] = tatitok_tensor
+                    else:
+                        print(f"Shape mismatch for {potential_target_key}: tatitok {tatitok_tensor.shape} vs model {model_weight[potential_target_key].shape}")
+                else:
+                    print(f"Key {potential_target_key} not found in model_cls")
+
+        # Update the weights in model_cls
+        model_weight.update(encoder_weight_mapping)
+        model.load_state_dict(model_weight)
+
+        print(f"Copied {len(encoder_weight_mapping)} weights from tatitok encoder to model_cls")
+        # import pdb; pdb.set_trace()
+        # NOTE: decoder is large transformer, so not using atm
+        # model_weight = {k.replace("encoder.", ""): v for k, v in model_weight.items()}
+        # model.load_state_dict(model_weight, strict=False)
+        logger.info(f"loading weight from {config.experiment.init_tatitok}")
 
     # Create the EMA model.
     ema_model = None
@@ -316,8 +349,8 @@ def create_dataloader(config, logger, accelerator):
         crop_size=preproc_config.crop_size,
         random_crop=preproc_config.random_crop,
         random_flip=preproc_config.random_flip,
-        normalize_mean=preproc_config.normalize_mean,
-        normalize_std=preproc_config.normalize_std,
+        # normalize_mean=preproc_config.normalize_mean,
+        # normalize_std=preproc_config.normalize_std,
     )
     train_dataloader, eval_dataloader = dataset.train_dataloader, dataset.eval_dataloader
 
@@ -1013,8 +1046,13 @@ def eval_reconstruction(
             accelerator.device, memory_format=torch.contiguous_format, non_blocking=True
         )
         if model_type in ["tatitok", "textok"]:
-            conditions = batch["class_id"]
-            text = [f"A photo of a {imagenet_idx2classname[condition.item()]}." for condition in conditions]
+            # NOTE: Default evaluation criteria used in their repo.
+            # conditions = batch["class_id"]
+            # text = [f"A photo of a {imagenet_idx2classname[condition.item()]}." for condition in conditions]
+            # text = [f"A photo of a {imagenet_idx2classname[int(condition)]}." for condition in conditions]
+            
+            text = batch["text"]
+            # import pdb; pdb.set_trace()
             text_guidance = clip_tokenizer(text).to(accelerator.device)
             cast_dtype = clip_encoder.transformer.get_cast_dtype()
             text_guidance = clip_encoder.token_embedding(text_guidance).to(cast_dtype)  # [batch_size, n_ctx, d_model]

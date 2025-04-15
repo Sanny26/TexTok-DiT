@@ -462,7 +462,7 @@ class ImageNet1kDataset(SimpleImageDataset):
                 image="jpg;png;jpeg;webp",
                 text="txt",
                 class_id="cls",
-                file_id="id",
+                file_id="fid",
                 handler=wds.warn_and_continue,
             ),
             wds.map(filter_keys(set(["image", "text", "class_id", "file_id", "__key__"]))),
