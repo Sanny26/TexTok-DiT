@@ -20,13 +20,13 @@ from torch import Tensor, nn
 from torch.utils.data import DataLoader, TensorDataset, Dataset
 from tqdm import tqdm
 
-from tld.denoiser import Denoiser1D
+from tld.denoiser import Denoiser1D, Denoiser
 from bsrgan_utils import utils_blindsr as blindsr
 from tld.tokenizer import TexTok
 from TitokTokenizer.modeling.titok import TiTok
 
 from tld.diffusion import DiffusionGenerator, DiffusionGenerator1D, encode_text, download_file
-from tld.configs import ModelConfig, DataConfig, TrainConfig, Denoiser1DConfig, DenoiserLoad
+from tld.configs import ModelConfig, DataConfig, TrainConfig, Denoiser1DConfig, DenoiserLoad, DenoiserConfig
 
 from pycocotools.coco import COCO
 from datetime import datetime
@@ -95,7 +95,7 @@ def eval_gen(diffuser: DiffusionGenerator, labels: Tensor, img_size: int) -> Ima
     
     out, _ = diffuser.generate(
         labels=labels,#torch.repeat_interleave(labels, 2, dim=0),
-        num_imgs=1,
+        num_imgs=labels.shape[0],
         class_guidance=class_guidance,
         seed=seed,
         n_iter=40,
@@ -188,7 +188,7 @@ def main(config: ModelConfig) -> None:
             train_dataset = SR_COCODataset(img_dir=dataconfig.img_path,
                                 ann_file=dataconfig.img_ann_path,bsr_mode=True)
 
-            train_loader = DataLoader(train_dataset, batch_size=train_config.batch_size, shuffle=True)
+            train_loader = DataLoader(train_dataset, batch_size=train_config.batch_size, shuffle=False)
 
             clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to(accelerator.device)
             clip_preprocess = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
@@ -220,6 +220,11 @@ def main(config: ModelConfig) -> None:
                     with torch.no_grad():
                         x, _ = titok.encode(x)
                     x = x.squeeze(2)
+                else:
+                    x = x.to(torch.float16)
+                    x = x * 2 - 1  # to make it between -1 and 1.
+                    x = vae.encode(x, return_dict=False)[0].sample()
+                
 
                 y = clip_preprocess(text = y, return_tensors = "pt", padding = True).to(accelerator.device)
                 y = encode_text(y, clip_model)
@@ -264,19 +269,22 @@ def main(config: ModelConfig) -> None:
         dataset = TensorDataset(latent_train_data, train_label_embeddings, train_image_embeddings)
         train_loader = DataLoader(dataset, batch_size=train_config.batch_size, shuffle=True)
 
-
-    model = Denoiser1D(**asdict(denoiser_config))
-    #load weights 
-    if config.use_titok:
-        pass
-    elif config.use_textok:
-        pass
+    if config.use_textok or config.use_textok:
+        model = Denoiser1D(**asdict(denoiser_config))
     else:
-        print(f"Downloading model from huggingface")
-        download_file(url='https://huggingface.co/apapiu/small_ldt/resolve/main/state_dict_378000.pth',
-                       filename='state_dict_378000.pth')
-        state_dict = torch.load('state_dict_378000.pth', map_location=torch.device("cuda"))
-        model.load_state_dict(state_dict, strict=False)
+        model = Denoiser(**asdict(denoiser_config))
+    
+    #load weights 
+    # if config.use_titok:
+    #     pass
+    # elif config.use_textok:
+    #     pass
+    # else:
+    #     print(f"Downloading model from huggingface")
+    #     download_file(url='https://huggingface.co/apapiu/small_ldt/resolve/main/state_dict_378000.pth',
+    #                    filename='state_dict_378000.pth')
+    #     state_dict = torch.load('state_dict_378000.pth', map_location=torch.device("cuda"))
+    #     model.load_state_dict(state_dict, strict=False)
 
     loss_fn = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=train_config.lr)
@@ -301,6 +309,8 @@ def main(config: ModelConfig) -> None:
         ema_model = copy.deepcopy(model).to(accelerator.device)
         if config.use_titok:
             diffuser = DiffusionGenerator1D(ema_model, titok, accelerator.device, torch.float32)
+        elif config.use_textok:
+            diffuser = DiffusionGenerator1D(ema_model, textok, accelerator.device, torch.float32)
         else:
             diffuser = DiffusionGenerator(ema_model, vae, accelerator.device, torch.float32)
 
@@ -323,8 +333,6 @@ def main(config: ModelConfig) -> None:
             '''
             if config.use_image_data:
                 
-                #print(x.shape)
-                #image = transforms.ToPILImage()(x)
                 z -= torch.min(z)
                 z /= torch.max(z)
                 z = dino_processor(images=z, return_tensors="pt")
@@ -334,8 +342,6 @@ def main(config: ModelConfig) -> None:
                 cls = z[:, 0]
                 max_pooled = torch.max(z[:, 1:], dim=1)[0]
                 pooled = torch.cat([cls, max_pooled], dim=1)
-
-                #print('eeeeyahhhhh', pooled.shape)
 
                 if config.use_titok:
                     with torch.no_grad():
@@ -429,12 +435,15 @@ def main(config: ModelConfig) -> None:
 if __name__ == "__main__":
     
     data_config = DataConfig()
-    denoiser_config = Denoiser1DConfig(super_res=True)
+
+    denoiser_config = DenoiserConfig(super_res=True)
+    # denoiser_config = Denoiser1DConfig(super_res=True)
 
     model_cfg = ModelConfig(
         data_config=data_config,
         denoiser_config=denoiser_config,
         train_config=TrainConfig(batch_size=128),
+        use_titok=False,
     )
     
     main(model_cfg)

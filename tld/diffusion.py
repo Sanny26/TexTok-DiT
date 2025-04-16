@@ -12,7 +12,7 @@ from diffusers import AutoencoderKL
 from torch import Tensor
 from tqdm import tqdm
 
-from tld.denoiser import Denoiser1D
+from tld.denoiser import Denoiser1D, Denoiser
 from tld.tokenizer import TexTok
 from TitokTokenizer.modeling.titok import TiTok
 
@@ -25,7 +25,7 @@ to_pil = transforms.ToPILImage()
 
 @dataclass
 class DiffusionGenerator:
-    model: Denoiser1D
+    model: Denoiser
     vae: AutoencoderKL
     device: torch.device
     model_dtype: torch.dtype = torch.float32
@@ -46,6 +46,7 @@ class DiffusionGenerator:
         seeds: Tensor | None = None,
         noise_levels=None,
         use_ddpm_plus: bool = True,
+        img_labels = None,
     ):
         """Generate images via reverse diffusion.
         if use_ddpm_plus=True uses Algorithm 2 DPM-Solver++(2M) here: https://arxiv.org/pdf/2211.01095.pdf
@@ -63,7 +64,9 @@ class DiffusionGenerator:
         x_t = self.initialize_image(seeds, num_imgs, img_size, seed)
 
         labels = torch.cat([labels, torch.zeros_like(labels)])
-        img_labels = torch.cat([img_labels, torch.zeros_like(img_labels)])
+        if img_labels is not None:
+            img_labels = torch.cat([img_labels, torch.zeros_like(img_labels)]).to(self.device, self.model_dtype)
+
         self.model.eval()
 
         x0_pred_prev = None
@@ -71,7 +74,7 @@ class DiffusionGenerator:
         for i in tqdm(range(len(noise_levels) - 1)):
             curr_noise, next_noise = noise_levels[i], noise_levels[i + 1]
             
-            x0_pred = self.pred_image(x_t, labels, curr_noise, class_guidance)
+            x0_pred = self.pred_image(x_t, labels, curr_noise, class_guidance, img_labels=img_labels)
 
             if x0_pred_prev is None:
                 x_t = ((curr_noise - next_noise) * x0_pred + next_noise * x_t) / curr_noise
@@ -87,7 +90,7 @@ class DiffusionGenerator:
 
             x0_pred_prev = x0_pred
 
-        x0_pred = self.pred_image(x_t, labels, next_noise, class_guidance)
+        x0_pred = self.pred_image(x_t, labels, next_noise, class_guidance, img_labels=img_labels)
 
         # shifting latents works a bit like an image editor:
         x0_pred[:, 3, :, :] += sharp_f
@@ -103,7 +106,7 @@ class DiffusionGenerator:
             torch.cat([noisy_image, noisy_image]),
             noises.to(self.device, self.model_dtype),
             labels.to(self.device, self.model_dtype),
-            img_labels.to(self.device, self.model_dtype),
+            img_labels
         )
         x0_pred = self.apply_classifier_free_guidance(x0_pred, num_imgs, class_guidance)
         return x0_pred
@@ -129,6 +132,7 @@ class DiffusionGenerator:
         """Apply classifier-free guidance to the predictions."""
         x0_pred_label, x0_pred_no_label = x0_pred[:num_imgs], x0_pred[num_imgs:]
         return class_guidance * x0_pred_label + (1 - class_guidance) * x0_pred_no_label
+
 
 
 @dataclass

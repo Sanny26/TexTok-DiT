@@ -19,6 +19,19 @@ class DataDownloadConfig:
     use_wandb: bool = False
 
 @dataclass
+class DenoiserConfig:
+    image_size: int = 16
+    noise_embed_dims: int = 256
+    patch_size: int = 2
+    embed_dim: int = 728
+    dropout: float = 0
+    n_layers: int = 3
+    text_emb_size: int = 512
+    n_channels: int = 4 
+    mlp_multiplier: int = 4 
+    super_res: bool = False
+
+@dataclass
 class Denoiser1DConfig:
     seq_len: int = 32  # number of tokens
     noise_embed_dims: int = 256
@@ -42,7 +55,7 @@ class DenoiserLoad:
 class VaeConfig:
     vae_scale_factor: float = 8
     vae_name: str = "madebyollin/sdxl-vae-fp16-fix"
-    vae_dtype: torch.dtype = torch.float32
+    vae_dtype: torch.dtype = torch.float16
 
 @dataclass
 class TexTokConfig:
@@ -64,16 +77,16 @@ class ClipConfig:
 @dataclass
 class DataConfig:
     """where is the latent data stored"""
-    latent_path: str = "preprocess_img.npz"
-    text_emb_path: str = "preprocess_txt.npz"
-    lr_latent_path: str = "preprocess_lr.npz"
+    latent_path: str = "preprocess_img_vae.npz"
+    text_emb_path: str = "preprocess_txt_vae.npz"
+    lr_latent_path: str = "preprocess_lr_vae.npz"
     val_path: str = ""
     img_path: str = "/home/tchoudha/coco2017/train2017"
     img_ann_path: str = "/home/tchoudha/coco2017/annotations/captions_train2017.json"
 
 @dataclass
 class TrainConfig:
-    batch_size: int = 128
+    batch_size: int = 8
     lr: float = 3e-4
     n_epoch: int = 250
     alpha: float = 0.999
