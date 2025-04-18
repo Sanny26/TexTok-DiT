@@ -24,6 +24,15 @@ import webdataset as wds
 from datasets import load_dataset
 from huggingface_hub import login
 
+# Check for existing shards and find the last one
+def get_last_shard_number(pattern):
+    import glob
+    shards = glob.glob(pattern)
+    if not shards:
+        return -1
+    # Extract numbers from filenames and find the max
+    numbers = [int(os.path.basename(s).split('-')[-1].split('.')[0]) for s in shards]
+    return max(numbers)
 
 def convert_imagenet21krecaption_to_wds(output_dir, max_train_samples_per_shard, max_val_samples_per_shard):
     """Convert Imagenet21K_Recaption dataset to WebDataset format.
@@ -73,86 +82,6 @@ def convert_imagenet21krecaption_to_wds(output_dir, max_train_samples_per_shard,
     time_taken = time.time() - now
     print(f"Wrote {i+1} examples in {time_taken // 3600} hours.")
 
-
-# def convert_imagenet1kcaption_to_wds(output_dir, max_train_samples_per_shard, max_val_samples_per_shard):
-#     """Convert Imagenet21K_Recaption dataset to WebDataset format.
-    
-#     Args:
-#         output_dir: Directory to save the WebDataset files
-#         max_samples_per_shard: Maximum number of samples per shard
-#         data_dir: Optional local directory containing the dataset
-#     """
-#     # assert not os.path.exists(os.path.join(output_dir, "imagenet21k-train-000000.tar"))
-#     # assert not os.path.exists(os.path.join(output_dir, "imagenet21k-val-000000.tar"))
-
-#     # Load dataset
-#     # print("Loading Imagenet1K_Recaption dataset...")
-#     # opat = os.path.join(output_dir, "imagenet1k-val-%06d.tar")
-#     # output = wds.ShardWriter(opat, maxcount=max_val_samples_per_shard)
-    
-#     # # Load validation dataset with streaming
-#     # dataset = load_dataset(
-#     #     "visual-layer/imagenet-1k-vl-enriched",
-#     #     streaming=True,
-#     #     split="validation",
-#     #     token=True
-#     # )
-#     # now = time.time()
-#     # for i, example in enumerate(dataset):
-#     #     if i % max_train_samples_per_shard == 0:
-#     #         print(f"Processing example {i}", file=sys.stderr)
-#     #     # import pdb; pdb.set_trace()
-#     #     # Get image and captions
-#     #     id = example["image_id"]
-#     #     img = example["image"]
-#     #     caption = example.get("caption_enriched", [])  # Handle case where captions might not exist
-#     #     # print(img, caption, end='\r')
-#     #     # Write to WebDataset format
-#     #     output.write({
-#     #         "__key__": "%08d" % i,
-#     #         "jpg": img.convert("RGB"),
-#     #         "txt": caption if caption else "",  # Use first caption if available
-#     #         "cls": example.get("label", -1),  # Use -1 if label doesn't exist
-#     #         "id": id
-#     #     })
-    
-#     # output.close()
-#     # time_taken = time.time() - now
-#     # print(f"Wrote {i+1} val examples in {time_taken // 3600} hours.")
-
-
-#     # Load training dataset with streaming
-#     print("Loading training set...")
-#     opat = os.path.join(output_dir, "imagenet1k-train-%06d.tar")
-#     output = wds.ShardWriter(opat, maxcount=max_train_samples_per_shard)
-#     dataset = load_dataset(
-#         "visual-layer/imagenet-1k-vl-enriched",
-#         streaming=True,
-#         split="train",
-#         token=True
-#     )
-#     now = time.time()
-#     for i, example in enumerate(dataset):
-#         if i % max_train_samples_per_shard == 0:
-#             print(f"Processing example {i}", file=sys.stderr)
-#         # import pdb; pdb.set_trace()
-#         # Get image and captions
-#         id = example["image_id"]
-#         img = example["image"]
-#         caption = example.get("caption_enriched", [])  # Handle case where captions might not exist
-        
-#         # Write to WebDataset format    
-#         output.write({
-#             "__key__": "%08d" % i,
-#             "jpg": img.convert("RGB"),
-#             "txt": caption[0] if caption else "",  # Use first caption if available
-#             "cls": example.get("label", -1),  # Use -1 if label doesn't exist
-#             "id": id
-#         })  
-#     output.close()
-#     time_taken = time.time() - now
-#     print(f"Wrote {i+1} train examples in {time_taken // 3600} hours.")
-
 def convert_imagenet1kcaption_to_wds(output_dir, max_train_samples_per_shard, max_val_samples_per_shard):
     """Convert Imagenet1K with captions dataset to WebDataset format.
     
@@ -161,77 +90,139 @@ def convert_imagenet1kcaption_to_wds(output_dir, max_train_samples_per_shard, ma
         max_train_samples_per_shard: Maximum number of samples per training shard
         max_val_samples_per_shard: Maximum number of samples per validation shard
     """
-    # Check for existing shards and find the last one
-    def get_last_shard_number(pattern):
-        import glob
-        shards = glob.glob(pattern)
-        if not shards:
-            return -1
-        # Extract numbers from filenames and find the max
-        numbers = [int(os.path.basename(s).split('-')[-1].split('.')[0]) for s in shards]
-        return max(numbers)
-
+    
     # Training set
     train_pattern = os.path.join(output_dir, "imagenet1k-train-*.tar")
     last_train_shard = get_last_shard_number(train_pattern)
     start_train_idx = (last_train_shard + 1) * max_train_samples_per_shard if last_train_shard >= 0 else 0
 
-    # # Validation set
-    # val_pattern = os.path.join(output_dir, "imagenet1k-val-*.tar")
-    # last_val_shard = get_last_shard_number(val_pattern)
-    # start_val_idx = (last_val_shard + 1) * max_val_samples_per_shard if last_val_shard >= 0 else 0
+    # Validation set
+    val_pattern = os.path.join(output_dir, "imagenet1k-val-*.tar")
+    last_val_shard = get_last_shard_number(val_pattern)
+    start_val_idx = (last_val_shard + 1) * max_val_samples_per_shard if last_val_shard >= 0 else 0
 
-    # print(f"Starting validation set from index {start_val_idx}")
-    # opat = os.path.join(output_dir, "imagenet1k-val-%06d.tar")
-    # output = wds.ShardWriter(opat, maxcount=max_val_samples_per_shard)
+    print(f"Starting validation set from index {start_val_idx}")
+    opat = os.path.join(output_dir, "imagenet1k-val-%06d.tar")
+    output = wds.ShardWriter(opat, maxcount=max_val_samples_per_shard)
+    
+    dataset = load_dataset(
+        "visual-layer/imagenet-1k-vl-enriched",
+        streaming=True,
+        split="validation",
+        token=True
+    )
+    
+    # Skip to the last processed index
+    dataset = dataset.skip(start_val_idx)
+    
+    now = time.time()
+    for i, example in enumerate(dataset, start=start_val_idx):
+        if i % max_val_samples_per_shard == 0:
+            print(f"Processing validation example {i}", file=sys.stderr)
+        
+        # Get image and captions
+        id = example["image_id"]
+        img = example["image"]
+        caption = example.get("caption_enriched", "")
+        
+        # Write to WebDataset format    
+        output.write({
+            "__key__": "%08d" % i,
+            "jpg": img.convert("RGB"),
+            "txt": caption,  # Use first caption if available
+            "cls": example.get("label", -1),  # Use -1 if label doesn't exist
+            "fid": id
+        })
+    
+    output.close()
+    time_taken = time.time() - now
+    print(f"Wrote {i+1} val examples in {time_taken // 3600} hours.")
+
+    # print(f"Starting training set from index {start_train_idx}")
+    # opat = os.path.join(output_dir, "imagenet1k-train-%06d.tar")
+    # output = wds.ShardWriter(opat, maxcount=max_train_samples_per_shard)
     
     # dataset = load_dataset(
     #     "visual-layer/imagenet-1k-vl-enriched",
     #     streaming=True,
-    #     split="validation",
+    #     split="train",
     #     token=True
     # )
     
     # # Skip to the last processed index
-    # dataset = dataset.skip(start_val_idx)
+    # dataset = dataset.skip(start_train_idx)
     
     # now = time.time()
-    # for i, example in enumerate(dataset, start=start_val_idx):
-    #     if i % max_val_samples_per_shard == 0:
-    #         print(f"Processing validation example {i}", file=sys.stderr)
-        
-    #     # Get image and captions
-    #     id = example["image_id"]
-    #     img = example["image"]
-    #     caption = example.get("caption_enriched", "")
-        
-    #     # Write to WebDataset format    
-    #     output.write({
-    #         "__key__": "%08d" % i,
-    #         "jpg": img.convert("RGB"),
-    #         "txt": caption,  # Use first caption if available
-    #         "cls": example.get("label", -1),  # Use -1 if label doesn't exist
-    #         "fid": id
-    #     })
+    # i = start_train_idx
+    # print(f"Processing training examples,starting from index {start_train_idx}")
+    # iterator = iter(dataset)
+    # while True:
+    #     try:
+    #         example = next(iterator)
+    #         if i % max_train_samples_per_shard == 0:
+    #             print(f"Processing training example {i}", file=sys.stderr)
+            
+    #         # Get image and captions
+    #         id = example["image_id"]
+    #         img = example["image"]
+    #         caption = example.get("caption_enriched", "")
+            
+    #         # Skip if image is corrupt
+    #         if img is None:
+    #             print(f"Skipping corrupt image with id: {hash(id)}")
+    #             i += 1
+    #             continue
+                
+    #         # Write to WebDataset format    
+    #         output.write({
+    #             "__key__": "%08d" % i,
+    #             "jpg": img.convert("RGB"),
+    #             "txt": caption,  # Use first caption if available
+    #             "cls": example.get("label", -1),  # Use -1 if label doesn't exist
+    #             "fid": id
+    #         })
+    #         i += 1
+    #     except IndexError:
+    #         # Reached the end of the dataset
+    #         break
+    #     except Exception as e:
+    #         print(f"Error processing image with id {hash(id)}: {str(e)}")
+    #         i += 1
+    #         continue
     
     # output.close()
     # time_taken = time.time() - now
-    # print(f"Wrote {i+1} val examples in {time_taken // 3600} hours.")
+    # print(f"Wrote {i} train examples in {time_taken // 3600} hours.")
 
-    print(f"Starting training set from index {start_train_idx}")
-    opat = os.path.join(output_dir, "imagenet1k-train-%06d.tar")
+
+def convert_laion12m_to_wds(output_dir, max_train_samples_per_shard, max_val_samples_per_shard):
+    """Convert Laion12M dataset to WebDataset format.
+    
+    Args:
+        output_dir: Directory to save the WebDataset files
+        max_train_samples_per_shard: Maximum number of samples per training shard
+        max_val_samples_per_shard: Maximum number of samples per validation shard
+    """
+    train_pattern = os.path.join(output_dir, "laion12m-train-*.tar")
+    start_train_idx = 0
+
+    # Check for existing shards and find the last one
+    # last_train_shard = get_last_shard_number(train_pattern)
+    # start_train_idx = (last_train_shard + 1) * max_train_samples_per_shard if last_train_shard >= 0 else 0
+    # print(f"Starting training set from index {start_train_idx}")
+    
+    opat = os.path.join(output_dir, "laion12m-train-%06d.tar")
     output = wds.ShardWriter(opat, maxcount=max_train_samples_per_shard)
     
     dataset = load_dataset(
-        "visual-layer/imagenet-1k-vl-enriched",
+        "laion/conceptual-captions-12m-webdataset",
         streaming=True,
         split="train",
         token=True
     )
     
-    # Skip to the last processed index
-    dataset = dataset.skip(start_train_idx)
-    
+    # dataset = dataset.skip(start_train_idx)
+
     now = time.time()
     i = start_train_idx
     print(f"Processing training examples,starting from index {start_train_idx}")
@@ -243,9 +234,9 @@ def convert_imagenet1kcaption_to_wds(output_dir, max_train_samples_per_shard, ma
                 print(f"Processing training example {i}", file=sys.stderr)
             
             # Get image and captions
-            id = example["image_id"]
-            img = example["image"]
-            caption = example.get("caption_enriched", "")
+            id = example["__key__"]
+            img = example["jpg"]
+            caption = example.get("txt", "")
             
             # Skip if image is corrupt
             if img is None:
@@ -361,7 +352,7 @@ if __name__ == "__main__":
     parser.add_argument("--max_train_samples_per_shard", type=int, default=4000, help="Path to the output directory.")
     parser.add_argument("--max_val_samples_per_shard", type=int, default=1000, help="Path to the output directory.")
     parser.add_argument("--token", type=str, help="Hugging Face token for authentication")
-    parser.add_argument("--dataset", type=str, choices=["imagenet", "imagenet21k", "imagenet1k-caption"], default="imagenet21k",
+    parser.add_argument("--dataset", type=str, choices=["imagenet", "imagenet21k", "imagenet1k-caption", "laion12m"], default="imagenet21k",
                       help="Dataset to convert (default: imagenet21k)")
     parser.add_argument("--check_info", action="store_true", help="Check dataset information instead of converting")
     args = parser.parse_args()
@@ -385,5 +376,7 @@ if __name__ == "__main__":
         convert_imagenet21krecaption_to_wds(args.output_dir, args.max_train_samples_per_shard, args.max_val_samples_per_shard)
     elif args.dataset == "imagenet1k-caption":
         convert_imagenet1kcaption_to_wds(args.output_dir, args.max_train_samples_per_shard, args.max_val_samples_per_shard)
+    elif args.dataset == "laion12m":
+        convert_laion12m_to_wds(args.output_dir, args.max_train_samples_per_shard, args.max_val_samples_per_shard)
     else:
         convert_imagenet_to_wds(args.output_dir, args.max_train_samples_per_shard, args.max_val_samples_per_shard)

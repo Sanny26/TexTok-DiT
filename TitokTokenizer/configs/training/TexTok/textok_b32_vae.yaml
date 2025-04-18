@@ -5,11 +5,11 @@ experiment:
     max_train_examples: 685_800_000
     save_every: 10_000
     eval_every: 10_000
-    generate_every: 5_000
+    generate_every: 10_000
     log_every: 50
     log_grad_norm_every: 1_000
     resume: True
-    init_tatitok: "/home/san/imtokenizer/TexTok-DiT/TitokTokenizer/checkpoints/tatitok_bl32_vae.pth"
+    init_tatitok: "../../textok-ckpts/tatitok_bl32_vae.pth"
 model:
     vq_model:
         quantize_mode: vae
@@ -39,9 +39,12 @@ losses:
 
 dataset:
     params:
-        train_shards_path_or_url: "/data/san/HF_datasets/imgnet-1k-caption-wds/imagenet1k-train-{000000..000160}.tar"
-        eval_shards_path_or_url: "/data/san/HF_datasets/imgnet-1k-caption-wds/imagenet1k-val-{000000..000049}.tar"
-        num_workers_per_gpu: 12
+        # train_shards_path_or_url: "/data/san/HF_datasets/imgnet-1k-caption-wds/imagenet1k-train-{000000..000160}.tar"
+        # eval_shards_path_or_url: "/data/san/HF_datasets/imgnet-1k-caption-wds/imagenet1k-val-{000000..000049}.tar"
+        train_shards_path_or_url: "/home/ubuntu/textok-ckpts/wds_output/laion12m-train-{000000..000099}.tar"
+        eval_shards_path_or_url: "/home/ubuntu/textok-ckpts/wds_output/imagenet1k-val-{000000..000049}.tar"
+        # num_workers_per_gpu: 12
+        num_workers_per_gpu: 4
         dataset_with_class_label: False
         dataset_with_text_label: True
     preprocessing:
@@ -75,6 +78,6 @@ training:
     enable_wandb: True
     use_ema: True
     seed: 42
-    max_train_steps: 300_000     # 650_000
+    max_train_steps: 200_000     # 650_000
     num_generated_images: 2
     max_grad_norm: 1.0

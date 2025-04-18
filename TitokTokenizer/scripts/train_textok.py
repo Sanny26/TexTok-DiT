@@ -46,6 +46,7 @@ def main():
     if config.training.enable_tf32:
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
+    # import pdb; pdb.set_trace()
     torch.backends.cudnn.benchmark = True
     torch.backends.cudnn.deterministic = False
 
