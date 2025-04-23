@@ -488,6 +488,9 @@ def train_one_epoch(config, logger, accelerator,
                     mode="generator",
                 )
             elif model_type == "textok":
+                import pdb; pdb.set_trace()
+                torch.save_state_dict(model.state_dict(), "290k_ckpt.pth")
+                
                 reconstructed_images, extra_results_dict = model(images, text_guidance)
                 autoencoder_loss, loss_dict = loss_module(
                     images,

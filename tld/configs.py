@@ -60,15 +60,17 @@ class VaeConfig:
 
 @dataclass
 class TexTokConfig:
-    batch_size: int = 2
-    image_size: int = 256
-    patch_size: int = 8
-    hidden_size: int = 768
-    latent_dim: int = 4
-    num_tokens: int = 64
-    ViT_number_of_heads: int = 12
-    ViT_number_of_layers: int = 12
+    # batch_size: int = 2
+    # image_size: int = 256
+    # patch_size: int = 8
+    # hidden_size: int = 768
+    # latent_dim: int = 4
+    # num_tokens: int = 64
+    # ViT_number_of_heads: int = 12
+    # ViT_number_of_layers: int = 12
     textok_dtype: torch.dtype = torch.float32
+    textok_cfg: str = "TitokTokenizer/configs/training/TexTok/textok_b32_vae.yaml"
+    textok_ckpt: str = "checkpoints/290k_ckpt.pth"
 
 @dataclass
 class ClipConfig:
@@ -138,3 +140,5 @@ class ModelConfig:
 if __name__=='__main__':
     cfg = Denoiser1DConfig()
     print(cfg)
+
+

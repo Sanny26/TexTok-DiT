@@ -11,9 +11,11 @@ from transformers import AutoImageProcessor, AutoModel
 import open_clip
 from open_clip.transformer import text_global_pool
 from termcolor import cprint
-
+from omegaconf import OmegaConf
 from TitokTokenizer.modeling.titok import TiTok
 from TitokTokenizer.modeling.tatitok import TATiTok
+from TitokTokenizer.modeling.textok import Textok
+
 from tld.diffusion import encode_text
 from tld.sr_train import SR_COCODataset
 from tld.configs import ModelConfig, DataConfig, TrainConfig
@@ -57,7 +59,7 @@ def save_comparison_image(sample_img, decoded_image, sample_caption, output_path
     # Save combined image
     combined_img.save(output_path)
 
-def convert_laion12m_to_wds(output_dir, max_train_samples_per_shard):
+def convert_laion12m_to_wds(output_dir, max_train_samples_per_shard, use_textok=False):
     """Convert Laion12M dataset to WebDataset format with TaTiTok, CLIP, and DINO embeddings.
     
     Args:
@@ -67,10 +69,21 @@ def convert_laion12m_to_wds(output_dir, max_train_samples_per_shard):
     """
     global DEBUG
     # Initialize models
-    tatitok = TATiTok.from_pretrained("turkeyju/tokenizer_tatitok_bl32_vae").to('cuda')
-    tatitok.eval()
-    tatitok.requires_grad_(False)
+    # tatitok = TATiTok.from_pretrained("turkeyju/tokenizer_tatitok_bl32_vae").to('cuda')
+    # tatitok.eval()
+    # tatitok.requires_grad_(False)
+    if use_textok:
+        print(f'Using Textok from {config.textok_cfg.textok_cfg}')
+        tok_model = Textok(OmegaConf.load(config.textok_cfg.textok_cfg))
+        tok_model.load_state_dict(torch.load(config.textok_cfg.textok_ckpt))
+    else:
+        print('Using Tatitok!')
+        tok_model = TATiTok.from_pretrained("turkeyju/tokenizer_tatitok_bl32_vae").to('cuda')
     
+    tok_model.eval()
+    tok_model.requires_grad_(False)
+    tok_model.to('cuda')
+
     # Initialize CLIP
     clip_encoder, _, _ = open_clip.create_model_and_transforms('ViT-L-14-336', pretrained='openai')
     del clip_encoder.visual
@@ -144,11 +157,6 @@ def convert_laion12m_to_wds(output_dir, max_train_samples_per_shard):
         if len(current_batch['images']) == batch_size:
             # Process batch
             with torch.no_grad():
-                # TaTiTok processing
-                img_batch = torch.cat(current_batch['images'], dim=0)
-                posteriors = tatitok.encode(img_batch)[1]
-                encoded_tokens = posteriors.sample()
-                x = encoded_tokens.squeeze(2)
 
                 # CLIP text processing
                 idxs = clip_tokenizer(current_batch['captions']).to('cuda')
@@ -160,6 +168,17 @@ def convert_laion12m_to_wds(output_dir, max_train_samples_per_shard):
                 text_guidance = text_guidance.permute(1, 0, 2)
                 text_guidance = clip_encoder.ln_final(text_guidance)
                 y_77 = text_guidance
+
+                 # TaTiTok processing
+                img_batch = torch.cat(current_batch['images'], dim=0)
+                if use_textok:
+                    posteriors = tok_model.encode(img_batch, text_guidance)[1]
+                    encoded_tokens = posteriors.sample()
+                    x = encoded_tokens.squeeze(2)
+                else:
+                    posteriors = tok_model.encode(img_batch)[1]
+                    encoded_tokens = posteriors.sample()
+                    x = encoded_tokens.squeeze(2)
                 
                 pooled_embed, _ = text_global_pool(text_guidance, idxs, clip_encoder.text_pool_type)
                 pooled_embed = pooled_embed @ clip_encoder.text_projection
@@ -189,7 +208,7 @@ def convert_laion12m_to_wds(output_dir, max_train_samples_per_shard):
                     # debugging to decode the image
                     sample_img, sample_caption = img_batch[0], current_batch['captions'][0]
                     sample_token, sample_text_guidance = encoded_tokens[0][None, ...], text_guidance[0][None, ...]
-                    decoded_image = tatitok.decode(sample_token, sample_text_guidance)
+                    decoded_image = tok_model.decode(sample_token, sample_text_guidance)
                     decoded_image = torch.clamp(decoded_image, 0.0, 1.0)
                     decoded_image = (decoded_image * 255.0).permute(0, 2, 3, 1).to("cpu", dtype=torch.uint8).numpy()[0]
                     
@@ -255,4 +274,4 @@ def convert_laion12m_to_wds(output_dir, max_train_samples_per_shard):
 
 if __name__ == "__main__":
     # convert_laion12m_to_wds(output_dir="laion12m-processed", max_train_samples_per_shard=1000000, max_val_samples_per_shard=1000000)
-    convert_laion12m_to_wds(output_dir="/home/ubuntu/cc12m/", max_train_samples_per_shard=1000)
+    convert_laion12m_to_wds(output_dir="/data/san/cc12m/", max_train_samples_per_shard=100, use_textok=True)

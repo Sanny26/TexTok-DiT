@@ -60,15 +60,9 @@ class VaeConfig:
 
 @dataclass
 class TexTokConfig:
-    batch_size: int = 2
-    image_size: int = 256
-    patch_size: int = 8
-    hidden_size: int = 768
-    latent_dim: int = 4
-    num_tokens: int = 64
-    ViT_number_of_heads: int = 12
-    ViT_number_of_layers: int = 12
     textok_dtype: torch.dtype = torch.float32
+    textok_cfg: str = "TitokTokenizer/configs/training/TexTok/textok_b32_vae.yaml"
+    textok_ckpt: str = "checkpoints/290k_ckpt.pth"
 
 @dataclass
 class ClipConfig:
@@ -78,17 +72,17 @@ class ClipConfig:
 @dataclass
 class DataConfig:
     """where is the latent data stored"""
-    latent_path: str = "/home/ubuntu/cc12m/latent-1.npz"
-    text_emb_path: str = "/home/ubuntu/cc12m/text_emb-1.npz"
-    detokenizer_text_emb_path: str = "/home/ubuntu/cc12m/detokenizer_text_emb-1.npz"
-    lr_latent_path: str = "/home/ubuntu/cc12m/lr_latent-1.npz"
+    latent_path: str = "/data/san/cc12m/latent-1.npz"
+    text_emb_path: str = "/data/san/cc12m/text_emb-1.npz"
+    detokenizer_text_emb_path: str = "/data/san/cc12m/detokenizer_text_emb-1.npz"
+    lr_latent_path: str = "/data/san/cc12m/lr_latent-1.npz"
     val_path: str = ""
     img_path: str = "/home/tchoudha/coco/train2017"
     img_ann_path: str = "/home/tchoudha/coco/annotations/captions_train2017.json"
 
 @dataclass
 class TrainConfig:
-    batch_size: int = 128
+    batch_size: int = 64
     lr: float = 3e-4
     n_epoch: int = 250
     alpha: float = 0.999
