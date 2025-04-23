@@ -1,6 +1,6 @@
 from dataclasses import dataclass, asdict
 
-# import clip
+import clip
 from transformers import CLIPProcessor, CLIPModel
 
 import numpy as np
@@ -15,10 +15,10 @@ from tqdm import tqdm
 from tld.denoiser import Denoiser1D, Denoiser
 from tld.tokenizer import TexTok
 from TitokTokenizer.modeling.titok import TiTok
-from TitokTokenizer.modeling.tatitok import TaTiTok
+from TitokTokenizer.modeling.tatitok import TATiTok
 
 from tld.configs import LTDConfig
-
+import copy
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 to_pil = transforms.ToPILImage()
@@ -34,7 +34,7 @@ class DiffusionGenerator:
     @torch.no_grad()
     def generate(
         self,
-        labels: Tensor,  # embeddings to condition on
+        labels: Tensor,  # embeddings to condition on num_imgs x 768
         n_iter: int = 30,
         num_imgs: int = 32,
         class_guidance: float = 3,
@@ -162,6 +162,7 @@ class DiffusionGenerator1D:
         noise_levels=None,
         use_ddpm_plus: bool = True,
         img_labels = None,
+        labels_detokenizer = None,
     ):
         """Generate images via reverse diffusion.
         if use_ddpm_plus=True uses Algorithm 2 DPM-Solver++(2M) here: https://arxiv.org/pdf/2211.01095.pdf
@@ -179,10 +180,11 @@ class DiffusionGenerator1D:
         x_t = self.initialize_image(seeds, num_imgs, n_tokens, seed) #change to init tokens?
         # print(f'generate func - {x_t.shape}, {seeds}, {labels.shape}') #should be of the shape B x 1 x 32 ?
         
-        original_labels = copy.deepcopy(labels)
         labels = torch.cat([labels, torch.zeros_like(labels)])
         if img_labels is not None:
-            img_labels = torch.cat([img_labels, torch.zeros_like(img_labels)]).to(self.device, self.model_dtype)
+            # img_labels = torch.cat([img_labels, torch.zeros_like(img_labels)]).to(self.device, self.model_dtype)
+            #remove classifier free guidance for lr images
+            img_labels = torch.cat([img_labels, img_labels]).to(self.device, self.model_dtype)
         self.model.eval()
 
         x0_pred_prev = None
@@ -209,20 +211,20 @@ class DiffusionGenerator1D:
         x0_pred = self.pred_image(x_t, labels, next_noise, class_guidance, img_labels = img_labels)
 
         # shifting latents works a bit like an image editor:
-        x0_pred[:, 3, : ] += sharp_f
-        x0_pred[:, 0, : ] += bright_f
+        # x0_pred[:, 3, : ] += sharp_f
+        # x0_pred[:, 0, : ] += bright_f
 
-        pred_img_tokens = (x0_pred * scale_factor).to(self.model_dtype)
+        # pred_img_tokens = (x0_pred * scale_factor).to(self.model_dtype)
+        pred_img_tokens = x0_pred.to(self.model_dtype)
         pred_img_tokens = pred_img_tokens.permute(0, 2, 1) # changing it back to BND format
         
+        pred_img_tokens = pred_img_tokens.permute(0,2,1)        
         if LTDConfig.use_titok:
-            pred_img_tokens = pred_img_tokens.permute(0,2,1)
             x0_pred_img = self.tokenizer.decode(pred_img_tokens.unsqueeze(2)).cpu()
-        elif LTDConfig.use_tatitok:
-            pred_img_tokens = pred_img_tokens.permute(0,2,1)
-            x0_pred_img = self.tokenizer.decode(pred_img_tokens.unsqueeze(2), original_labels).cpu()
-        else:
-            x0_pred_img = self.tokenizer.decode(pred_img_tokens, prompts).cpu()
+        elif LTDConfig.use_tatitok or LTDConfig.use_textok:
+            x0_pred_img = self.tokenizer.decode(pred_img_tokens.unsqueeze(2), labels_detokenizer).cpu()
+        
+        x0_pred_img = (torch.clamp(x0_pred_img, 0.0, 1.0)* 255.0).to(dtype=torch.uint8).cpu()
         return x0_pred_img, x0_pred
 
     def pred_image(self, noisy_latent, labels, noise_level, class_guidance, img_labels = None):
@@ -296,10 +298,10 @@ class DiffusionTransformer:
 
         denoiser = denoiser.to(device)
 
-        # self.clip_model, preprocess = clip.load(cfg.clip_cfg.clip_model_name)
-        # self.clip_model = self.clip_model.to(device)
-        self.clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
-        self.clip_preprocess = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+        self.clip_model, preprocess = clip.load(cfg.clip_cfg.clip_model_name)
+        self.clip_model = self.clip_model.to(device)
+        # self.clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
+        # self.clip_preprocess = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
 
         if cfg.use_textok:
             print('Using Textok!')
@@ -310,7 +312,10 @@ class DiffusionTransformer:
                                                  cfg.denoiser_load.dtype)
         elif cfg.use_titok:
             print('Using Titok!')
-            titok = TiTok.from_pretrained("yucornetto/tokenizer_titok_l32_imagenet").to(device)
+            # titok = TiTok(cfg.titok_cfg, device).to(device)
+            titok = TiTok.from_pretrained("yucornetto/tokenizer_titok_l32_imagenet")
+            if device.type == "cuda":
+                titok = titok.to(device)
             self.diffuser = DiffusionGenerator1D(denoiser,
                                                  titok,
                                                  device,
@@ -335,8 +340,10 @@ class DiffusionTransformer:
         nrow = int(np.sqrt(num_imgs))
 
         cur_prompts = [prompt] * num_imgs
-        labels = encode_text(cur_prompts, self.clip_model)
-        
+        # # labels = encode_text(cur_prompts, self.clip_model)
+        # import pdb; pdb.set_trace()
+        # labels = self.clip_preprocess(text=cur_prompts).input_ids.to(device)
+        labels  = encode_text(cur_prompts, self.clip_model)
         out, out_latent = self.diffuser.generate(
             prompts=cur_prompts,
             labels=labels,
@@ -368,7 +375,7 @@ if __name__ == "__main__":
         prompt=prompt,
         class_guidance=6,
         seed=42,
-        num_imgs=3,
+        num_imgs=16,
         n_iter=15,
     )
 

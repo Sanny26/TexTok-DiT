@@ -60,14 +60,6 @@ class VaeConfig:
 
 @dataclass
 class TexTokConfig:
-    # batch_size: int = 2
-    # image_size: int = 256
-    # patch_size: int = 8
-    # hidden_size: int = 768
-    # latent_dim: int = 4
-    # num_tokens: int = 64
-    # ViT_number_of_heads: int = 12
-    # ViT_number_of_layers: int = 12
     textok_dtype: torch.dtype = torch.float32
     textok_cfg: str = "TitokTokenizer/configs/training/TexTok/textok_b32_vae.yaml"
     textok_ckpt: str = "checkpoints/290k_ckpt.pth"
@@ -80,29 +72,28 @@ class ClipConfig:
 @dataclass
 class DataConfig:
     """where is the latent data stored"""
-    latent_path: str = "preprocess_tatitok.npz"
-    text_emb_path: str = "preprocess_txt.npz" 
-    detokenizer_text_emb_path: str = "preprocess_tatitok_txt.npz"
-    lr_latent_path: str = "preprocess_lr.npz"
+    latent_path: str = "/data/san/cc12m/latent-1.npz"
+    text_emb_path: str = "/data/san/cc12m/text_emb-1.npz"
+    detokenizer_text_emb_path: str = "/data/san/cc12m/detokenizer_text_emb-1.npz"
+    lr_latent_path: str = "/data/san/cc12m/lr_latent-1.npz"
     val_path: str = ""
     img_path: str = "/home/tchoudha/coco/train2017"
     img_ann_path: str = "/home/tchoudha/coco/annotations/captions_train2017.json"
 
 @dataclass
 class TrainConfig:
-    batch_size: int = 128
+    batch_size: int = 64
     lr: float = 3e-4
     n_epoch: int = 250
     alpha: float = 0.999
-    from_scratch: bool = False
+    from_scratch: bool = True
     ##betas determine the distribution of noise seen during training
     beta_a: float = 1  
     beta_b: float = 2.5
     save_and_eval_every_iters: int = 1000
-    run_id: str = "8jd13a4z"
-    run_name: str = "iconic-lake-52"
+    run_id: str = "tsbs6ngk"
     # model_name: str = "/home/tchoudha/TexTok-DiT/tld/checkpoints/2025-04-19_02-17-56/checkpoint_99000.pt"
-    model_name: str = "checkpoints/2025-04-20_14-45-49/checkpoint_199000.pt"
+    model_name: str = "checkpoint.pt"
     compile: bool = True
     save_model: bool = True
     use_wandb: bool = True
@@ -140,5 +131,3 @@ class ModelConfig:
 if __name__=='__main__':
     cfg = Denoiser1DConfig()
     print(cfg)
-
-

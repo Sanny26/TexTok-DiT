@@ -24,7 +24,7 @@ import glob
 from collections import defaultdict
 import open_clip
 
-from data import SimpleImageDataset, PretoeknizedDataSetJSONL, PretokenizedWebDataset
+from data import SimpleImageDataset, PretokenizedDataSetJSONL, PretokenizedWebDataset
 import torch
 from torch.utils.data import DataLoader
 from omegaconf import OmegaConf
@@ -33,6 +33,7 @@ from utils.lr_schedulers import get_scheduler
 from modeling.modules import EMAModel, ReconstructionLoss_Stage1, ReconstructionLoss_Stage2, ReconstructionLoss_Single_Stage, MLMLoss, ARLoss
 from modeling.titok import TiTok, PretrainedTokenizer
 from modeling.tatitok import TATiTok
+from modeling.textok import Textok
 from modeling.maskgit import ImageBert, UViTBert
 from modeling.rar import RAR
 from modeling.maskgen import MaskGen_VQ, MaskGen_KL, open_clip_text_encoding
@@ -42,6 +43,7 @@ from demo_util import get_titok_tokenizer, get_tatitok_tokenizer, sample_fn
 from imagenet_classes import imagenet_idx2classname
 from utils.viz_utils import make_viz_from_samples, make_viz_from_samples_generation, make_viz_from_samples_t2i_generation
 from torchinfo import summary
+from data import ImageNet1kDataset
 
 
 def get_config():
@@ -108,6 +110,9 @@ def create_model_and_loss_module(config, logger, accelerator,
     elif model_type == "tatitok":
         model_cls = TATiTok
         loss_cls = ReconstructionLoss_Single_Stage
+    elif model_type == "textok":
+        model_cls = Textok
+        loss_cls = ReconstructionLoss_Single_Stage
     elif model_type == "maskgit":
         if config.model.generator.model_type == "ViT":
             model_cls = ImageBert
@@ -144,6 +149,39 @@ def create_model_and_loss_module(config, logger, accelerator,
         msg = model.load_state_dict(model_weight, strict=False)
         logger.info(f"loading weight from {config.experiment.init_weight}, msg: {msg}")
 
+    if config.experiment.get("init_tatitok", "") and model_type == "textok":
+        # load weights from tatitok to textok model whenever possible
+        model_weight = model.state_dict()
+        tatitok_weight = torch.load(config.experiment.init_tatitok, map_location="cpu")
+
+        # Create a dictionary to hold the weights that should be copied
+        encoder_weight_mapping = {}
+        # Loop through the tatitok weights
+        for tatitok_key, tatitok_tensor in tatitok_weight.items():
+            # Only consider encoder weights
+            if 'encoder' in tatitok_key:
+                potential_target_key = tatitok_key
+                # Check if this key exists in model_cls
+                if potential_target_key in model_weight:
+                    # Check if the dimensions match
+                    if tatitok_tensor.shape == model_weight[potential_target_key].shape:
+                        encoder_weight_mapping[potential_target_key] = tatitok_tensor
+                    else:
+                        print(f"Shape mismatch for {potential_target_key}: tatitok {tatitok_tensor.shape} vs model {model_weight[potential_target_key].shape}")
+                else:
+                    print(f"Key {potential_target_key} not found in model_cls")
+
+        # Update the weights in model_cls
+        model_weight.update(encoder_weight_mapping)
+        model.load_state_dict(model_weight)
+
+        print(f"Copied {len(encoder_weight_mapping)} weights from tatitok encoder to model_cls")
+        # import pdb; pdb.set_trace()
+        # NOTE: decoder is large transformer, so not using atm
+        # model_weight = {k.replace("encoder.", ""): v for k, v in model_weight.items()}
+        # model.load_state_dict(model_weight, strict=False)
+        logger.info(f"loading weight from {config.experiment.init_tatitok}")
+
     # Create the EMA model.
     ema_model = None
     if config.training.use_ema:
@@ -174,7 +212,7 @@ def create_model_and_loss_module(config, logger, accelerator,
             model_summary_str = summary(model, input_size=input_size, depth=5,
             col_names=("input_size", "output_size", "num_params", "params_percent", "kernel_size", "mult_adds"))
             logger.info(model_summary_str)
-        elif model_type in ["tatitok"]:
+        elif model_type in ["tatitok", "textok"]:
             input_image_size  = (1, 3, config.dataset.preprocessing.crop_size, config.dataset.preprocessing.crop_size)
             input_text_size = (1, 77, 768)
             input_size = [input_image_size, input_text_size]
@@ -242,7 +280,7 @@ def create_optimizer(config, logger, model, loss_module,
         betas=(optimizer_config.beta1, optimizer_config.beta2)
     )
 
-    if (config.model.vq_model.finetune_decoder or model_type == "tatitok") and need_discrminator:
+    if (config.model.vq_model.finetune_decoder or model_type in ["tatitok", "textok"]) and need_discrminator:
         discriminator_learning_rate = optimizer_config.discriminator_learning_rate
         discriminator_named_parameters = list(loss_module.named_parameters())
         discriminator_gain_or_bias_params = [p for n, p in discriminator_named_parameters if exclude(n, p) and p.requires_grad]
@@ -294,59 +332,28 @@ def create_dataloader(config, logger, accelerator):
     total_batch_size = (
         config.training.per_gpu_batch_size * accelerator.num_processes * config.training.gradient_accumulation_steps
     )
-    # We use webdataset for data loading. The dataloaders are created with sampling with replacement.
-    # We don't do dataset resuming here, instead we resample the shards and buffer each time. The sampling is stochastic.
-    # This means that the dataloading is not deterministic, but it's fast and efficient.
+    
     preproc_config = config.dataset.preprocessing
     dataset_config = config.dataset.params
 
-    # T2I uses a pretokenized dataset for speed-up.
-    if dataset_config.get("pretokenization", "") and dataset_config.get("dataset_with_text_label", False) is True:
-        dataset = PretokenizedWebDataset(
-            train_shards_path=dataset_config.train_shards_path_or_url,
-            eval_shards_path=dataset_config.eval_shards_path_or_url,
-            num_train_examples=config.experiment.max_train_examples,
-            per_gpu_batch_size=config.training.per_gpu_batch_size,
-            global_batch_size=total_batch_size_without_accum,
-            num_workers_per_gpu=dataset_config.num_workers_per_gpu,
-            resize_shorter_edge=preproc_config.resize_shorter_edge,
-            crop_size=preproc_config.crop_size,
-            random_crop=preproc_config.random_crop,
-            random_flip=preproc_config.random_flip,
-            normalize_mean=preproc_config.normalize_mean,
-            normalize_std=preproc_config.normalize_std,
-            process_recap=preproc_config.get("preproc_recap", True),
-            use_recap_prob=preproc_config.get("use_recap_prob", 0.95)
-        )
-        train_dataloader, eval_dataloader = dataset.train_dataloader, dataset.eval_dataloader
-    # SimpleImageDataset
-    elif dataset_config.get("pretokenization", "") and dataset_config.get("dataset_with_text_label", False) is False:
-        dataset = SimpleImageDataset(
-            train_shards_path=dataset_config.train_shards_path_or_url,
-            eval_shards_path=dataset_config.eval_shards_path_or_url,
-            num_train_examples=config.experiment.max_train_examples,
-            per_gpu_batch_size=config.training.per_gpu_batch_size,
-            global_batch_size=total_batch_size_without_accum,
-            num_workers_per_gpu=dataset_config.num_workers_per_gpu,
-            resize_shorter_edge=preproc_config.resize_shorter_edge,
-            crop_size=preproc_config.crop_size,
-            random_crop=preproc_config.random_crop,
-            random_flip=preproc_config.random_flip,
-            dataset_with_class_label=dataset_config.get("dataset_with_class_label", True),
-            dataset_with_text_label=dataset_config.get("dataset_with_text_label", False),
-            res_ratio_filtering=preproc_config.get("res_ratio_filtering", False),
-        )
-        train_dataloader, eval_dataloader = dataset.train_dataloader, dataset.eval_dataloader
-    # potentially, use a pretokenized dataset for ImageNet speed-up.
-    else:
-        if dataset_config.get("pretokenization", ""):
-            train_dataloader = DataLoader(
-                PretoeknizedDataSetJSONL(dataset_config.pretokenization),
-                batch_size=config.training.per_gpu_batch_size,
-                shuffle=True, drop_last=True, pin_memory=True)
-            train_dataloader.num_batches = math.ceil(
-                config.experiment.max_train_examples / total_batch_size_without_accum)
-    
+    # Use ImageNet1kDataset for ImageNet-1k data
+    print('Using ImageNet1kDataset')
+    dataset = ImageNet1kDataset(
+        train_shards_path=dataset_config.train_shards_path_or_url,
+        eval_shards_path=dataset_config.eval_shards_path_or_url,
+        num_train_examples=config.experiment.max_train_examples,
+        per_gpu_batch_size=config.training.per_gpu_batch_size,
+        global_batch_size=total_batch_size_without_accum,
+        num_workers_per_gpu=dataset_config.num_workers_per_gpu,
+        resize_shorter_edge=preproc_config.resize_shorter_edge,
+        crop_size=preproc_config.crop_size,
+        random_crop=preproc_config.random_crop,
+        random_flip=preproc_config.random_flip,
+        # normalize_mean=preproc_config.normalize_mean,
+        # normalize_std=preproc_config.normalize_std,
+    )
+    train_dataloader, eval_dataloader = dataset.train_dataloader, dataset.eval_dataloader
+
     return train_dataloader, eval_dataloader
 
 
@@ -432,7 +439,7 @@ def train_one_epoch(config, logger, accelerator,
             images = batch["image"].to(
                 accelerator.device, memory_format=torch.contiguous_format, non_blocking=True
             )
-        if "text" in batch and model_type == "tatitok":
+        if "text" in batch and model_type in ["tatitok", "textok"]:
             text = batch["text"]
             with torch.no_grad():
                 text_guidance = clip_tokenizer(text).to(accelerator.device)
@@ -443,7 +450,7 @@ def train_one_epoch(config, logger, accelerator,
                 text_guidance = clip_encoder.transformer(text_guidance, attn_mask=clip_encoder.attn_mask)
                 text_guidance = text_guidance.permute(1, 0, 2)  # LND -> NLD
                 text_guidance = clip_encoder.ln_final(text_guidance)  # [batch_size, n_ctx, transformer.width]
-
+        
         fnames = batch["__key__"]
         data_time_meter.update(time.time() - end)
 
@@ -480,9 +487,20 @@ def train_one_epoch(config, logger, accelerator,
                     global_step,
                     mode="generator",
                 )
+            elif model_type == "textok":
+                import pdb; pdb.set_trace()
+                torch.save_state_dict(model.state_dict(), "290k_ckpt.pth")
+                
+                reconstructed_images, extra_results_dict = model(images, text_guidance)
+                autoencoder_loss, loss_dict = loss_module(
+                    images,
+                    reconstructed_images,
+                    extra_results_dict,
+                    global_step,
+                    mode="generator",
+                )
             else:
                 raise NotImplementedError
-
             # Gather the losses across all processes for logging.
             autoencoder_logs = {}
             for k, v in loss_dict.items():
@@ -514,7 +532,7 @@ def train_one_epoch(config, logger, accelerator,
 
             # Train discriminator.
             discriminator_logs = defaultdict(float)
-            if (config.model.vq_model.finetune_decoder or model_type == "tatitok") and accelerator.unwrap_model(loss_module).should_discriminator_be_trained(global_step):
+            if (config.model.vq_model.finetune_decoder or model_type == "tatitok" or model_type == "textok") and accelerator.unwrap_model(loss_module).should_discriminator_be_trained(global_step):
                 discriminator_logs = defaultdict(float)
                 discriminator_loss, loss_dict_discriminator = loss_module(
                     images,
@@ -611,7 +629,7 @@ def train_one_epoch(config, logger, accelerator,
                     logger=logger,
                     config=config,
                     model_type=model_type,
-                    text_guidance=text_guidance[:config.training.num_generated_images] if model_type == "tatitok" else None,
+                    text_guidance=text_guidance[:config.training.num_generated_images] if model_type in ["tatitok", "textok"] else None,
                     pretrained_tokenizer=pretrained_tokenizer
                 )
 
@@ -1030,9 +1048,14 @@ def eval_reconstruction(
         images = batch["image"].to(
             accelerator.device, memory_format=torch.contiguous_format, non_blocking=True
         )
-        if model_type == "tatitok":
-            conditions = batch["class_id"]
-            text = [f"A photo of a {imagenet_idx2classname[condition.item()]}." for condition in conditions]
+        if model_type in ["tatitok", "textok"]:
+            # NOTE: Default evaluation criteria used in their repo.
+            # conditions = batch["class_id"]
+            # text = [f"A photo of a {imagenet_idx2classname[condition.item()]}." for condition in conditions]
+            # text = [f"A photo of a {imagenet_idx2classname[int(condition)]}." for condition in conditions]
+            
+            text = batch["text"]
+            # import pdb; pdb.set_trace()
             text_guidance = clip_tokenizer(text).to(accelerator.device)
             cast_dtype = clip_encoder.transformer.get_cast_dtype()
             text_guidance = clip_encoder.token_embedding(text_guidance).to(cast_dtype)  # [batch_size, n_ctx, d_model]
@@ -1045,7 +1068,7 @@ def eval_reconstruction(
         original_images = torch.clone(images)
         if model_type == "titok":
             reconstructed_images, model_dict = local_model(images)
-        elif model_type == "tatitok":
+        elif model_type in ["tatitok", "textok"]:
             reconstructed_images, model_dict = local_model(images, text_guidance)
         else:
             raise NotImplementedError
@@ -1083,11 +1106,15 @@ def reconstruct_images(model, original_images, fnames, accelerator,
         dtype = torch.bfloat16
 
     with torch.autocast("cuda", dtype=dtype, enabled=accelerator.mixed_precision != "no"):
-        enc_tokens, encoder_dict = accelerator.unwrap_model(model).encode(original_images)
-    
+        if model_type == "textok":
+            # import pdb; pdb.set_trace()
+            enc_tokens, encoder_dict = accelerator.unwrap_model(model).encode(original_images, text_guidance)
+        else:
+            enc_tokens = accelerator.unwrap_model(model).encode(original_images)
+            
     if model_type == "titok":
         reconstructed_images = accelerator.unwrap_model(model).decode(enc_tokens)
-    elif model_type == "tatitok":
+    elif model_type in ["tatitok", "textok"]:
         reconstructed_images = accelerator.unwrap_model(model).decode(enc_tokens, text_guidance)
     if pretrained_tokenizer is not None:
         reconstructed_images = pretrained_tokenizer.decode(reconstructed_images.argmax(1))

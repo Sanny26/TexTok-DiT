@@ -1,3 +1,0 @@
-[submodule "1d-tokenizer"]
-	path = 1d-tokenizer
-	url = https://github.com/bytedance/1d-tokenizer.git

@@ -134,12 +134,20 @@ def main(config: ModelConfig) -> None:
             transforms.Resize((256, 256)),
             # transforms.ToTensor()
         ])
-        train_dataset = COCODataset(img_dir="/home/tchoudha/coco2017/train2017",
-                            ann_file="/home/tchoudha/coco2017/annotations/captions_train2017.json", 
+        # train_dataset = COCODataset(img_dir="/home/tchoudha/coco2017/train2017",
+        #                     ann_file="/home/tchoudha/coco2017/annotations/captions_train2017.json", 
+        #                     transform=transform)
+        
+        # val_dataset = COCODataset(img_dir="/home/tchoudha/coco2017/val2017",
+        #                     ann_file="/home/tchoudha/coco2017/annotations/captions_val2017.json", 
+        #                     transform=transform)
+
+        train_dataset = COCODataset(img_dir="../coco/val2017",
+                            ann_file="../coco/annotations/captions_val2017.json", 
                             transform=transform)
         
-        val_dataset = COCODataset(img_dir="/home/tchoudha/coco2017/val2017",
-                            ann_file="/home/tchoudha/coco2017/annotations/captions_val2017.json", 
+        val_dataset = COCODataset(img_dir="../coco/val2017",
+                            ann_file="../coco/annotations/captions_val2017.json", 
                             transform=transform)
         
         train_loader = DataLoader(train_dataset, batch_size=train_config.batch_size, shuffle=True)

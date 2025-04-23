@@ -3,3 +3,12 @@ build
 
 *_cache
 *.egg-info/
+
+__pycache__/
+*.pyc
+
+TitokTokenizer/*/*_run3/
+TitokTokenizer/wandb/
+TitokTokenizer/checkpoints/
+*_run/
+*_run3/

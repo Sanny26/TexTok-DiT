@@ -278,7 +278,7 @@ class SimpleImageDataset:
         return self._eval_dataloader
     
 
-class PretoeknizedDataSetJSONL(Dataset):
+class PretokenizedDataSetJSONL(Dataset):
     def __init__(self, data_path):
         super().__init__()
         self.jsonl_file = data_path
@@ -406,3 +406,232 @@ class PretokenizedWebDataset(SimpleImageDataset):
             pin_memory=True,
             persistent_workers=False,
         )
+
+
+class ImageNet1kDataset(SimpleImageDataset):
+    def __init__(
+        self,
+        train_shards_path: Union[Text, List[Text]],
+        eval_shards_path: Union[Text, List[Text]],
+        num_train_examples: int,
+        per_gpu_batch_size: int,
+        global_batch_size: int,
+        num_workers_per_gpu: int = 12,
+        resize_shorter_edge: int = 256,
+        crop_size: int = 256,
+        random_crop: bool = True,
+        random_flip: bool = True,
+        normalize_mean: List[float] = [0., 0., 0.],
+        normalize_std: List[float] = [1., 1., 1.],
+    ):
+        """Initializes the ImageNet1kDataset class for handling ImageNet-1k data format."""
+        transform = ImageTransform(
+            resize_shorter_edge, crop_size, random_crop, random_flip,
+            normalize_mean, normalize_std)
+
+        # Create a custom decoder that handles the 'id' field as a string
+        def custom_decoder(key, data):
+            if key == "id":
+                return data.decode("utf-8")
+            return data
+        
+        train_processing_pipeline = [
+            wds.decode(wds.autodecode.ImageHandler("pil", extensions=["webp", "png", "jpg", "jpeg"]),
+                       custom_decoder),
+            wds.rename(
+                image="jpg;png;jpeg;webp",
+                text="txt",
+                class_id="cls",
+                file_id="fid",
+                handler=wds.warn_and_continue,
+            ),
+            wds.map(filter_keys(set(["image", "text", "class_id", "file_id", "__key__"]))),
+            wds.map_dict(
+                image=transform.train_transform,
+                text=lambda x: x.decode("utf-8") if x is not None else "",
+                class_id=lambda x: x.decode("utf-8") if x is not None else -1,
+                file_id=lambda x: x.decode("utf-8") if x is not None else "",
+                handler=wds.warn_and_continue,
+            ),
+        ]
+
+        test_processing_pipeline = [
+            wds.decode(wds.autodecode.ImageHandler("pil", extensions=["webp", "png", "jpg", "jpeg"]),
+                       custom_decoder),
+            wds.rename(
+                image="jpg;png;jpeg;webp",
+                text="txt",
+                class_id="cls",
+                file_id="fid",
+                handler=wds.warn_and_continue,
+            ),
+            wds.map(filter_keys(set(["image", "text", "class_id", "file_id", "__key__"]))),
+            wds.map_dict(
+                image=transform.eval_transform,
+                text=lambda x: x.decode("utf-8") if x is not None else "",
+                class_id=lambda x: x.decode("utf-8") if x is not None else -1,
+                file_id=lambda x: x.decode("utf-8") if x is not None else "",
+                handler=wds.warn_and_continue,
+            ),
+        ]
+
+        # Create train dataset and loader
+        pipeline = [
+            wds.ResampledShards(train_shards_path),
+            wds.tarfile_to_samples(handler=wds.warn_and_continue),
+            wds.shuffle(bufsize=5000, initial=1000),
+            *train_processing_pipeline,
+            wds.batched(per_gpu_batch_size, partial=False, collation_fn=default_collate),
+        ]
+
+        num_batches = math.ceil(num_train_examples / global_batch_size)
+        num_worker_batches = math.ceil(num_train_examples / 
+            (global_batch_size * num_workers_per_gpu))
+        num_batches = num_worker_batches * num_workers_per_gpu
+        num_samples = num_batches * global_batch_size
+
+        # Each worker is iterating over the complete dataset
+        self._train_dataset = wds.DataPipeline(*pipeline).with_epoch(num_worker_batches)
+        self._train_dataloader = wds.WebLoader(
+            self._train_dataset,
+            batch_size=None,
+            shuffle=False,
+            num_workers=num_workers_per_gpu,
+            pin_memory=True,
+            persistent_workers=True,
+        )
+        # Add meta-data to dataloader instance for convenience
+        self._train_dataloader.num_batches = num_batches
+        self._train_dataloader.num_samples = num_samples
+
+        # Create eval dataset and loader
+        pipeline = [
+            wds.SimpleShardList(eval_shards_path),
+            wds.split_by_worker,
+            wds.tarfile_to_samples(handler=wds.ignore_and_continue),
+            *test_processing_pipeline,
+            wds.batched(per_gpu_batch_size, partial=True, collation_fn=default_collate),
+        ]
+        self._eval_dataset = wds.DataPipeline(*pipeline)
+        self._eval_dataloader = wds.WebLoader(
+            self._eval_dataset,
+            batch_size=None,
+            shuffle=False,
+            num_workers=num_workers_per_gpu,
+            pin_memory=True,
+            persistent_workers=True,
+        )
+
+
+if __name__ == "__main__":
+    dataset = ImageNet1kDataset(
+        train_shards_path=["/data/san/HF_datasets/imgnet-1k-caption-wds/imagenet1k-train-000001.tar",],
+        eval_shards_path=["/data/san/HF_datasets/imgnet-1k-caption-wds/imagenet1k-val-000049.tar", ],
+        num_train_examples=1281167,
+        per_gpu_batch_size=128,
+        global_batch_size=128,
+        num_workers_per_gpu=12,
+        resize_shorter_edge=256,
+        crop_size=256,
+        random_crop=True,
+        random_flip=True,
+        normalize_mean=[0.485, 0.456, 0.406],
+        normalize_std=[0.229, 0.224, 0.225],  
+    )
+
+    for batch in dataset.train_dataloader:
+        print(batch)
+        break
+
+    # Test each pipeline element separately
+    # print("\nTesting pipeline elements:")
+    
+    # # 1. Test raw shard loading
+    # print("\n1. Testing raw shard loading:")
+    # raw_dataset = wds.WebDataset(["/data/san/HF_datasets/imgnet-1k-caption-wds/imagenet1k-val-000049.tar",])
+    # for i, sample in enumerate(raw_dataset):
+    #     print(f"\nRaw sample {i}:")
+    #     print("Available keys:", list(sample.keys()))
+    #     if i >= 1:
+    #         break
+
+    # # 2. Test image decoding
+    # print("\n2. Testing image decoding:")
+    # # Create a custom decoder that handles the 'id' field as a string
+    # def custom_decoder(key, data):
+    #     if key == "id":
+    #         return data.decode("utf-8")
+    #     return data
+
+    # decoded_dataset = raw_dataset.decode(
+    #     wds.autodecode.ImageHandler("pil", extensions=["webp", "png", "jpg", "jpeg"]),
+    #     custom_decoder
+    # )
+    # for i, sample in enumerate(decoded_dataset):
+    #     print(f"\nDecoded sample {i}:")
+    #     print("Available keys:", list(sample.keys()))
+    #     print("Image type:", type(sample.get("jpg")))
+    #     print("ID type:", type(sample.get("id")))
+    #     if i >= 1:
+    #         break
+
+    # # 3. Test renaming
+    # print("\n3. Testing field renaming:")
+    # renamed_dataset = decoded_dataset.rename(
+    #     image="jpg;png;jpeg;webp",
+    #     text="txt",
+    #     class_id="cls",
+    #     file_id="id",
+    #     handler=wds.warn_and_continue,
+    # )
+    # for i, sample in enumerate(renamed_dataset):
+    #     print(f"\nRenamed sample {i}:")
+    #     print("Available keys:", list(sample.keys()))
+    #     if i >= 1:
+    #         break
+
+    # # 4. Test key filtering
+    # print("\n4. Testing key filtering:")
+    # filtered_dataset = renamed_dataset.map(filter_keys(set(["image", "text", "class_id", "file_id", "__key__"])))
+    # for i, sample in enumerate(filtered_dataset):
+    #     print(f"\nFiltered sample {i}:")
+    #     print("Available keys:", list(sample.keys()))
+    #     if i >= 1:
+    #         break
+
+    # # 5. Test field mapping
+    # print("\n5. Testing field mapping:")
+    # transform = ImageTransform(
+    #     resize_shorter_edge=256,
+    #     crop_size=256,
+    #     random_crop=True,
+    #     random_flip=True,
+    #     normalize_mean=[0.485, 0.456, 0.406],
+    #     normalize_std=[0.229, 0.224, 0.225],
+    # )
+    # mapped_dataset = filtered_dataset.map_dict(
+    #     image=transform.train_transform,
+    #     text=lambda x: x.decode("utf-8") if x is not None else "",
+    #     class_id=lambda x: x.decode("utf-8") if x is not None else -1,
+    #     file_id=lambda x: x.decode("utf-8") if x is not None else "",
+    #     handler=wds.warn_and_continue,
+    # )
+    # for i, sample in enumerate(mapped_dataset):
+    #     print(f"\nMapped sample {i}:")
+    #     print("Image shape:", sample.get("image", "No image").shape if hasattr(sample.get("image"), "shape") else "No shape")
+    #     print("Text:", sample.get("text", "No text"))
+    #     print("Class ID:", sample.get("class_id", "No class_id"))
+    #     print("File ID:", sample.get("file_id", "No file_id"))
+    #     if i >= 1:
+    #         break
+
+    # # 6. Test batching
+    # print("\n6. Testing batching:")
+    # batched_dataset = mapped_dataset.batched(2, partial=False, collation_fn=default_collate)
+    # for i, batch in enumerate(batched_dataset):
+    #     print(f"\nBatch {i}:")
+    #     print("Batch keys:", list(batch.keys()))
+    #     print("Image batch shape:", batch.get("image", "No image").shape if hasattr(batch.get("image"), "shape") else "No shape")
+    #     if i >= 1:
+    #         break
+

@@ -18,9 +18,9 @@ limitations under the License.
 import torch
 from einops import rearrange
 
-from .titok import TiTok
-from modeling.modules.blocks import TATiTokDecoder
-from modeling.quantizer.quantizer import VectorQuantizer, DiagonalGaussianDistribution
+from TitokTokenizer.modeling.titok import TiTok
+from TitokTokenizer.modeling.modules.blocks import TATiTokDecoder
+from TitokTokenizer.modeling.quantizer.quantizer import VectorQuantizer, DiagonalGaussianDistribution
 from omegaconf import OmegaConf
 
 from huggingface_hub import PyTorchModelHubMixin
@@ -64,5 +64,6 @@ class TATiTok(TiTok, PyTorchModelHubMixin, tags=["arxiv:2501.07730", "image-toke
     
     def forward(self, x, text_guidance):
         z_quantized, result_dict = self.encode(x)
+        # import pdb; pdb.set_trace()
         decoded = self.decode(z_quantized, text_guidance)
         return decoded, result_dict
