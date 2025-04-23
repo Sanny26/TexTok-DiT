@@ -107,7 +107,7 @@ class MLPSepConv(nn.Module):
         )
 
     def forward(self, x):
-        print(x.shape)
+        #print(x.shape)
         w = h = int(np.sqrt(x.size(1)))  # only square images for now
         x = rearrange(x, "bs (h w) d -> bs d h w", h=h, w=w)
         x = self.mlp(x)

@@ -78,10 +78,10 @@ class ClipConfig:
 @dataclass
 class DataConfig:
     """where is the latent data stored"""
-    latent_path: str = "preprocess_tatitok.npz"
-    text_emb_path: str = "preprocess_txt.npz" 
-    detokenizer_text_emb_path: str = "preprocess_tatitok_txt.npz"
-    lr_latent_path: str = "preprocess_lr.npz"
+    latent_path: str = "/home/ubuntu/cc12m/latent-1.npz"
+    text_emb_path: str = "/home/ubuntu/cc12m/text_emb-1.npz"
+    detokenizer_text_emb_path: str = "/home/ubuntu/cc12m/detokenizer_text_emb-1.npz"
+    lr_latent_path: str = "/home/ubuntu/cc12m/lr_latent-1.npz"
     val_path: str = ""
     img_path: str = "/home/tchoudha/coco/train2017"
     img_ann_path: str = "/home/tchoudha/coco/annotations/captions_train2017.json"
@@ -92,15 +92,14 @@ class TrainConfig:
     lr: float = 3e-4
     n_epoch: int = 250
     alpha: float = 0.999
-    from_scratch: bool = False
+    from_scratch: bool = True
     ##betas determine the distribution of noise seen during training
     beta_a: float = 1  
     beta_b: float = 2.5
     save_and_eval_every_iters: int = 1000
-    run_id: str = "8jd13a4z"
-    run_name: str = "iconic-lake-52"
+    run_id: str = "tsbs6ngk"
     # model_name: str = "/home/tchoudha/TexTok-DiT/tld/checkpoints/2025-04-19_02-17-56/checkpoint_99000.pt"
-    model_name: str = "checkpoints/2025-04-20_14-45-49/checkpoint_199000.pt"
+    model_name: str = "checkpoint.pt"
     compile: bool = True
     save_model: bool = True
     use_wandb: bool = True

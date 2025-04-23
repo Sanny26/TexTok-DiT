@@ -56,4 +56,4 @@ Homepage = "https://github.com/apapiu/transformer_latent_diffusion"
 Repository = "https://github.com/apapiu/transformer_latent_diffusion"
 
 [tool.setuptools]
-packages = ["tld"]
+packages = ["tld", "TitokTokenizer"]

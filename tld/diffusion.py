@@ -12,12 +12,13 @@ from diffusers import AutoencoderKL
 from torch import Tensor
 from tqdm import tqdm
 
-from tld.denoiser import Denoiser
+from tld.denoiser import Denoiser1D, Denoiser
 from tld.tokenizer import TexTok
 from TitokTokenizer.modeling.titok import TiTok
+from TitokTokenizer.modeling.tatitok import TATiTok
 
 from tld.configs import LTDConfig
-
+import copy
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 to_pil = transforms.ToPILImage()
@@ -35,7 +36,7 @@ class DiffusionGenerator:
         self,
         labels: Tensor,  # embeddings to condition on num_imgs x 768
         n_iter: int = 30,
-        num_imgs: int = 16,
+        num_imgs: int = 32,
         class_guidance: float = 3,
         seed: int = 10,
         scale_factor: int = 8,  # latent scaling before decoding - should be ~ std of latent space
@@ -46,6 +47,7 @@ class DiffusionGenerator:
         seeds: Tensor | None = None,
         noise_levels=None,
         use_ddpm_plus: bool = True,
+        img_labels = None,
     ):
         """Generate images via reverse diffusion.
         if use_ddpm_plus=True uses Algorithm 2 DPM-Solver++(2M) here: https://arxiv.org/pdf/2211.01095.pdf
@@ -61,16 +63,18 @@ class DiffusionGenerator:
             rs = [hs[i - 1] / hs[i] for i in range(1, len(hs))]
 
         x_t = self.initialize_image(seeds, num_imgs, img_size, seed)
+        #print(x_t.shape)
 
         labels = torch.cat([labels, torch.zeros_like(labels)])
+        img_labels = torch.cat([img_labels, torch.zeros_like(img_labels)])
         self.model.eval()
 
         x0_pred_prev = None
 
         for i in tqdm(range(len(noise_levels) - 1)):
             curr_noise, next_noise = noise_levels[i], noise_levels[i + 1]
-
-            x0_pred = self.pred_image(x_t, labels, curr_noise, class_guidance)
+            
+            x0_pred = self.pred_image(x_t, labels, curr_noise, class_guidance, img_labels = img_labels)
 
             if x0_pred_prev is None:
                 x_t = ((curr_noise - next_noise) * x0_pred + next_noise * x_t) / curr_noise
@@ -86,7 +90,7 @@ class DiffusionGenerator:
 
             x0_pred_prev = x0_pred
 
-        x0_pred = self.pred_image(x_t, labels, next_noise, class_guidance)
+        x0_pred = self.pred_image(x_t, labels, next_noise, class_guidance, img_labels = img_labels)
 
         # shifting latents works a bit like an image editor:
         x0_pred[:, 3, :, :] += sharp_f
@@ -95,13 +99,15 @@ class DiffusionGenerator:
         x0_pred_img = self.vae.decode((x0_pred * scale_factor).to(self.model_dtype))[0].cpu()
         return x0_pred_img, x0_pred
 
-    def pred_image(self, noisy_image, labels, noise_level, class_guidance):
+    def pred_image(self, noisy_image, labels, noise_level, class_guidance, img_labels):
         num_imgs = noisy_image.size(0)
         noises = torch.full((2 * num_imgs, 1), noise_level)
+        #print('duh', noises.shape)
         x0_pred = self.model(
             torch.cat([noisy_image, noisy_image]),
             noises.to(self.device, self.model_dtype),
             labels.to(self.device, self.model_dtype),
+            img_labels.to(self.device, self.model_dtype),
         )
         x0_pred = self.apply_classifier_free_guidance(x0_pred, num_imgs, class_guidance)
         return x0_pred
@@ -111,7 +117,7 @@ class DiffusionGenerator:
         if seeds is None:
             generator = torch.Generator(device=self.device)
             generator.manual_seed(seed)
-            return torch.randn(
+            res = torch.randn(
                 num_imgs,
                 self.model.n_channels,
                 img_size,
@@ -120,6 +126,8 @@ class DiffusionGenerator:
                 device=self.device,
                 generator=generator,
             )
+            #print(num_imgs, self.model.n_channels, img_size, res.shape)
+            return res
         else:
             return seeds.to(self.device, self.model_dtype)
 
@@ -131,7 +139,7 @@ class DiffusionGenerator:
 
 @dataclass
 class DiffusionGenerator1D:
-    model: Denoiser
+    model: Denoiser1D
     tokenizer: TexTok
     device: torch.device
     model_dtype: torch.dtype = torch.float32
@@ -153,6 +161,8 @@ class DiffusionGenerator1D:
         seeds: Tensor | None = None,
         noise_levels=None,
         use_ddpm_plus: bool = True,
+        img_labels = None,
+        labels_detokenizer = None,
     ):
         """Generate images via reverse diffusion.
         if use_ddpm_plus=True uses Algorithm 2 DPM-Solver++(2M) here: https://arxiv.org/pdf/2211.01095.pdf
@@ -168,9 +178,13 @@ class DiffusionGenerator1D:
             rs = [hs[i - 1] / hs[i] for i in range(1, len(hs))]
 
         x_t = self.initialize_image(seeds, num_imgs, n_tokens, seed) #change to init tokens?
-        print(f'generate func - {x_t.shape}, {seeds}') #should be of the shape B x 1 x 32 ?
-
-        labels = torch.cat([labels, torch.zeros_like(labels)]) # 2B x 768
+        # print(f'generate func - {x_t.shape}, {seeds}, {labels.shape}') #should be of the shape B x 1 x 32 ?
+        
+        labels = torch.cat([labels, torch.zeros_like(labels)])
+        if img_labels is not None:
+            # img_labels = torch.cat([img_labels, torch.zeros_like(img_labels)]).to(self.device, self.model_dtype)
+            #remove classifier free guidance for lr images
+            img_labels = torch.cat([img_labels, img_labels]).to(self.device, self.model_dtype)
         self.model.eval()
 
         x0_pred_prev = None
@@ -178,9 +192,8 @@ class DiffusionGenerator1D:
         for i in tqdm(range(len(noise_levels) - 1)):
             curr_noise, next_noise = noise_levels[i], noise_levels[i + 1]
 
-            x0_pred = self.pred_image(x_t, labels, curr_noise, class_guidance)
+            x0_pred = self.pred_image(x_t, labels, curr_noise, class_guidance, img_labels=img_labels)
 
-            print(x0_pred.shape, curr_noise, next_noise, x_t.shape)
             if x0_pred_prev is None:
                 x_t = ((curr_noise - next_noise) * x0_pred + next_noise * x_t) / curr_noise
             else:
@@ -195,28 +208,35 @@ class DiffusionGenerator1D:
 
             x0_pred_prev = x0_pred
 
-        x0_pred = self.pred_image(x_t, labels, next_noise, class_guidance)
+        x0_pred = self.pred_image(x_t, labels, next_noise, class_guidance, img_labels = img_labels)
 
         # shifting latents works a bit like an image editor:
-        x0_pred[:, 3, : ] += sharp_f
-        x0_pred[:, 0, : ] += bright_f
+        # x0_pred[:, 3, : ] += sharp_f
+        # x0_pred[:, 0, : ] += bright_f
 
-        pred_img_tokens = (x0_pred * scale_factor).to(self.model_dtype)
+        # pred_img_tokens = (x0_pred * scale_factor).to(self.model_dtype)
+        pred_img_tokens = x0_pred.to(self.model_dtype)
         pred_img_tokens = pred_img_tokens.permute(0, 2, 1) # changing it back to BND format
+        
+        pred_img_tokens = pred_img_tokens.permute(0,2,1)        
         if LTDConfig.use_titok:
-            x0_pred_img = self.tokenizer.decode_tokens(pred_img_tokens).cpu()
-        else:
-            x0_pred_img = self.tokenizer.decode(pred_img_tokens, prompts).cpu()
+            x0_pred_img = self.tokenizer.decode(pred_img_tokens.unsqueeze(2)).cpu()
+        elif LTDConfig.use_tatitok or LTDConfig.use_textok:
+            x0_pred_img = self.tokenizer.decode(pred_img_tokens.unsqueeze(2), labels_detokenizer).cpu()
+        
+        x0_pred_img = (torch.clamp(x0_pred_img, 0.0, 1.0)* 255.0).to(dtype=torch.uint8).cpu()
         return x0_pred_img, x0_pred
 
-    def pred_image(self, noisy_latent, labels, noise_level, class_guidance):
+    def pred_image(self, noisy_latent, labels, noise_level, class_guidance, img_labels = None):
         num_imgs = noisy_latent.size(0)
         noises = torch.full((2 * num_imgs, 1), noise_level) # noiselevel - timestep??
-        import pdb; pdb.set_trace()
+        #print('duhhhhhhh', noises.shape)
+
         x0_pred = self.model(
             torch.cat([noisy_latent, noisy_latent]),
             noises.to(self.device, self.model_dtype),
             labels.to(self.device, self.model_dtype),
+            img_labels
         )
         x0_pred = self.apply_classifier_free_guidance(x0_pred, num_imgs, class_guidance)
         return x0_pred
@@ -226,7 +246,7 @@ class DiffusionGenerator1D:
         if seeds is None:
             generator = torch.Generator(device=self.device)
             generator.manual_seed(seed)
-            return torch.randn(
+            res = torch.randn(
                 num_imgs,
                 self.model.n_channels,
                 n_tokens,
@@ -234,6 +254,8 @@ class DiffusionGenerator1D:
                 device=self.device,
                 generator=generator,
             )
+            #print(num_imgs, self.model.n_channels, n_tokens, res.shape)
+            return res
         else:
             return seeds.to(self.device, self.model_dtype)
 
@@ -253,22 +275,25 @@ def download_file(url, filename):
 @torch.no_grad()
 def encode_text(label, model):
     # TODO: Switchout to T5 encoder?
-    text_tokens = clip.tokenize(label, truncate=True).to(device)
-    text_encoding = model.encode_text(text_tokens)
-    return text_encoding.cpu()
+    # text_tokens = clip.tokenize(label, truncate=True).to(device)
+    # text_encoding = model.encode_text(text_tokens)
+    # return text_encoding.cpu()
+    embedding = model.get_text_features(**label)
+    embedding = torch.nn.functional.normalize(embedding, dim=-1)
+    return embedding
 
 
 class DiffusionTransformer:
-    # NOTE: Used only for eval!?
+    # NOTE: Used only for eval!
     def __init__(self, cfg: LTDConfig):
-        denoiser = Denoiser(**asdict(cfg.denoiser_cfg))
+        denoiser = Denoiser1D(**asdict(cfg.denoiser_cfg))
         denoiser = denoiser.to(cfg.denoiser_load.dtype)
 
         if cfg.denoiser_load.file_url is not None:
             if cfg.denoiser_load.local_filename is not None:
                 print(f"Downloading model from {cfg.denoiser_load.file_url}")
                 download_file(cfg.denoiser_load.file_url, cfg.denoiser_load.local_filename)
-                state_dict = torch.load(cfg.denoiser_load.local_filename, map_location=torch.device("cpu"))
+                state_dict = torch.load(cfg.denoiser_load.local_filename, map_location=torch.device("cuda"))
                 denoiser.load_state_dict(state_dict)
 
         denoiser = denoiser.to(device)
@@ -295,6 +320,15 @@ class DiffusionTransformer:
                                                  titok,
                                                  device,
                                                  cfg.denoiser_load.dtype)
+        
+        elif cfg.use_tatitok:
+            print('Using TaTitok!!!!!!!!!!!!!!!!!!!!!')
+            tatitok = TATiTok.from_pretrained("turkeyju/tokenizer_tatitok_bl32_vae").to(device)
+            self.diffuser = DiffusionGenerator1D(denoiser,
+                                                 tatitok,
+                                                 device,
+                                                 cfg.denoiser_load.dtype) 
+            
         else:
             vae = AutoencoderKL.from_pretrained(cfg.vae_cfg.vae_name, 
             torch_dtype=cfg.vae_cfg.vae_dtype).to(device)

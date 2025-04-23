@@ -9,7 +9,7 @@ from torchvision.models.vision_transformer import VisionTransformer, Encoder
 from einops.layers.torch import Rearrange
 from einops import rearrange, repeat, pack, unpack
 from transformers import T5Tokenizer, T5EncoderModel
-from configs import TexTokConfig
+from tld.configs import TexTokConfig
 import pdb
 
 def divisible_by(num, den):
