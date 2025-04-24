@@ -2,6 +2,7 @@
 
 import copy
 from dataclasses import asdict
+import time
 
 import numpy as np
 import torch
@@ -24,7 +25,7 @@ from tld.denoiser import Denoiser1D, Denoiser
 from bsrgan_utils import utils_blindsr as blindsr
 from tld.tokenizer import TexTok
 from TitokTokenizer.modeling.titok import TiTok
-from TitokTokenizer.modeling.tatitok impor TaTiTok
+from TitokTokenizer.modeling.tatitok import TATiTok
 
 from tld.diffusion import DiffusionGenerator, DiffusionGenerator1D, encode_text, download_file
 from tld.configs import ModelConfig, DataConfig, TrainConfig, Denoiser1DConfig, DenoiserLoad, DenoiserConfig
@@ -95,6 +96,8 @@ def eval_gen(diffuser: DiffusionGenerator, labels: Tensor, img_size: int, img_la
     seed = 10
     
     #print('evalgen', labels.shape, img_labels.shape)
+    
+    start = time.time()
 
     out, _ = diffuser.generate(
         labels=labels,#torch.repeat_interleave(labels, 2, dim=0),
@@ -107,6 +110,10 @@ def eval_gen(diffuser: DiffusionGenerator, labels: Tensor, img_size: int, img_la
         img_size=img_size,
         img_labels = img_labels
     )
+
+    end = time.time()
+
+    print('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', start-end)
 
     out = to_pil((vutils.make_grid((out + 1) / 2, nrow=8, padding=4)).float().clip(0, 1))
     out.save(f"emb_val_cfg:{class_guidance}_seed:{seed}.png")
@@ -265,7 +272,7 @@ def main(config: ModelConfig) -> None:
         x_val = torch.from_numpy(img_latent_file['x_val']).to('cuda')
         y_val = torch.from_numpy(text_emb_file['y_val']).to('cuda')
         z_val = torch.from_numpy(lr_latent_file['z_val']).to('cuda')
-        
+       
         x_all = torch.from_numpy(img_latent_file['x_all'])
         x_all = x_all[:-16]
         y_all = torch.from_numpy(text_emb_file['y_all'])
@@ -409,7 +416,8 @@ def main(config: ModelConfig) -> None:
                     if config.use_titok or config.use_tatitok:
                         out = eval_gen_1D(diffuser=diffuser, labels=y_val, n_tokens=denoiser_config.seq_len, img_labels = z_val)
                     else:
-                        out = eval_gen(diffuser=diffuser, labels=y_val, img_size=denoiser_config.image_size, img_labels = z_val)
+                        for _ in range(10):
+                            out = eval_gen(diffuser=diffuser, labels=y_val, img_size=denoiser_config.image_size, img_labels = z_val)
                     out.save("img.jpg")
                     if train_config.use_wandb:
                         print(global_step)

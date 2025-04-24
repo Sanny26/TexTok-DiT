@@ -104,7 +104,7 @@ if not os.path.exists(config.latents_path):
         #    x = x.squeeze(2)
         
         # Process Titok Tokens
-        posteriors = tatitok_tokenizer.encode(x.to('cuda'))[1]
+        posteriors = tatitok.encode(x.to('cuda'))[1]
         encoded_tokens = posteriors.sample()
         x = encoded_tokens
 

@@ -1,4 +1,5 @@
 from dataclasses import dataclass, asdict
+import copy
 
 # import clip
 from transformers import CLIPProcessor, CLIPModel
@@ -15,7 +16,7 @@ from tqdm import tqdm
 from tld.denoiser import Denoiser1D, Denoiser
 from tld.tokenizer import TexTok
 from TitokTokenizer.modeling.titok import TiTok
-from TitokTokenizer.modeling.tatitok import TaTiTok
+from TitokTokenizer.modeling.tatitok import TATiTok
 
 from tld.configs import LTDConfig
 
@@ -98,6 +99,7 @@ class DiffusionGenerator:
 
         x0_pred_img = self.vae.decode((x0_pred * scale_factor).to(self.model_dtype))[0].cpu()
         return x0_pred_img, x0_pred
+        #return x0_pred
 
     def pred_image(self, noisy_image, labels, noise_level, class_guidance, img_labels):
         num_imgs = noisy_image.size(0)
@@ -214,7 +216,8 @@ class DiffusionGenerator1D:
 
         pred_img_tokens = (x0_pred * scale_factor).to(self.model_dtype)
         pred_img_tokens = pred_img_tokens.permute(0, 2, 1) # changing it back to BND format
-        
+        print('pred_img_tokens', pred_img_tokens.shape)
+
         if LTDConfig.use_titok:
             pred_img_tokens = pred_img_tokens.permute(0,2,1)
             x0_pred_img = self.tokenizer.decode(pred_img_tokens.unsqueeze(2)).cpu()

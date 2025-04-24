@@ -40,8 +40,8 @@ class Denoiser1DConfig:
     embed_dim: int = 768  # DiT hidden dimension 
     dropout: float = 0
     n_layers: int = 12  # DiT layer count
-    text_emb_size: int = 768  # CLIP embedding size
-    n_channels: int = 16  # Latent token dimension
+    text_emb_size: int = 512  # CLIP embedding size
+    n_channels: int = 12  # Latent token dimension
     mlp_multiplier: int = 4
     image_emb_size: int | None = 768
     super_res: bool = True
@@ -115,7 +115,7 @@ class LTDConfig:
     textok_cfg: TexTokConfig = field(default_factory=TexTokConfig)
     use_textok: bool = False
     use_titok: bool = False
-    use_tatitok: bool = True
+    use_tatitok: bool = False
 
 @dataclass
 class ModelConfig:
@@ -130,7 +130,7 @@ class ModelConfig:
     textok_cfg: TexTokConfig = field(default_factory=TexTokConfig)
     use_textok: bool = False
     use_titok: bool = False
-    use_tatitok: bool = True
+    use_tatitok: bool = False
     use_image_data: bool = True
     latents_path: str = "/home/ubuntu/TexTok-DiT/preprocess.npz"
 
