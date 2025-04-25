@@ -97,8 +97,6 @@ def eval_gen(diffuser: DiffusionGenerator, labels: Tensor, img_size: int, img_la
     
     #print('evalgen', labels.shape, img_labels.shape)
     
-    start = time.time()
-
     out, _ = diffuser.generate(
         labels=labels,#torch.repeat_interleave(labels, 2, dim=0),
         num_imgs=labels.shape[0],
@@ -111,9 +109,6 @@ def eval_gen(diffuser: DiffusionGenerator, labels: Tensor, img_size: int, img_la
         img_labels = img_labels
     )
 
-    end = time.time()
-
-    print('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', start-end)
 
     out = to_pil((vutils.make_grid((out + 1) / 2, nrow=8, padding=4)).float().clip(0, 1))
     out.save(f"emb_val_cfg:{class_guidance}_seed:{seed}.png")
@@ -274,11 +269,10 @@ def main(config: ModelConfig) -> None:
         z_val = torch.from_numpy(lr_latent_file['z_val']).to('cuda')
        
         x_all = torch.from_numpy(img_latent_file['x_all'])
-        x_all = x_all[:-16]
         y_all = torch.from_numpy(text_emb_file['y_all'])
         z_all = torch.from_numpy(lr_latent_file['z_all'])
         
-        #print(x_all.shape, y_all.shape, z_all.shape)
+        # print(x_all.shape, y_all.shape, z_all.shape)
 
         dataset = TensorDataset(x_all, y_all, z_all)
         train_loader = DataLoader(dataset, batch_size=train_config.batch_size, shuffle=True)
