@@ -20,16 +20,17 @@ class DataDownloadConfig:
 
 @dataclass
 class DenoiserConfig:
-    image_size: int = 16
+    image_size: int = 32
     noise_embed_dims: int = 256
     patch_size: int = 2
-    embed_dim: int = 728
+    embed_dim: int = 768
     dropout: float = 0
-    n_layers: int = 3
+    n_layers: int = 12
     text_emb_size: int = 512
+    image_emb_size: int = 768
     n_channels: int = 4 
     mlp_multiplier: int = 4 
-    super_res: bool = False
+    super_res: bool = True
 
 @dataclass
 class Denoiser1DConfig:
@@ -43,7 +44,7 @@ class Denoiser1DConfig:
     n_channels: int = 12  # Latent token dimension
     mlp_multiplier: int = 4
     image_emb_size: int | None = 768
-    super_res: bool = False
+    super_res: bool = True
 
 @dataclass
 class DenoiserLoad:
@@ -55,7 +56,7 @@ class DenoiserLoad:
 class VaeConfig:
     vae_scale_factor: float = 8
     vae_name: str = "madebyollin/sdxl-vae-fp16-fix"
-    vae_dtype: torch.dtype = torch.float16
+    vae_dtype: torch.dtype = torch.float32
 
 @dataclass
 class TexTokConfig:
@@ -81,8 +82,8 @@ class DataConfig:
     text_emb_path: str = "preprocess_txt_vae.npz"
     lr_latent_path: str = "preprocess_lr_vae.npz"
     val_path: str = ""
-    img_path: str = "/home/tchoudha/coco2017/train2017"
-    img_ann_path: str = "/home/tchoudha/coco2017/annotations/captions_train2017.json"
+    img_path: str = "/home/tchoudha/coco/train2017"
+    img_ann_path: str = "/home/tchoudha/coco/annotations/captions_train2017.json"
 
 @dataclass
 class TrainConfig:
@@ -106,12 +107,13 @@ class TrainConfig:
 class LTDConfig:
     """main config for inference"""
     denoiser_cfg: Denoiser1DConfig = field(default_factory=Denoiser1DConfig)
+    denoiser_old_cfg: DenoiserConfig = field(default_factory=DenoiserConfig)
     denoiser_load: DenoiserLoad = field(default_factory=DenoiserLoad)
     vae_cfg: VaeConfig = field(default_factory=VaeConfig)
     clip_cfg: ClipConfig = field(default_factory=ClipConfig)
     textok_cfg: TexTokConfig = field(default_factory=TexTokConfig)
     use_textok: bool = False
-    use_titok: bool = True
+    use_titok: bool = False
 
 
 @dataclass
@@ -120,12 +122,14 @@ class ModelConfig:
     data_config: DataConfig 
     download_config: DataDownloadConfig | None = None
     denoiser_config: Denoiser1DConfig = field(default_factory=Denoiser1DConfig)
+    denoiser_old_config: DenoiserConfig = field(default_factory=DenoiserConfig)
     train_config: TrainConfig = field(default_factory=TrainConfig)
     vae_cfg: VaeConfig = field(default_factory=VaeConfig)
     clip_cfg: ClipConfig = field(default_factory=ClipConfig)
     textok_cfg: TexTokConfig = field(default_factory=TexTokConfig)
     use_textok: bool = False
-    use_titok: bool = True
+    use_titok: bool = False
+    use_tatitok: bool = False
     use_image_data: bool = True
 
 if __name__=='__main__':

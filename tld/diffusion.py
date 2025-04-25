@@ -35,7 +35,7 @@ class DiffusionGenerator:
         self,
         labels: Tensor,  # embeddings to condition on
         n_iter: int = 30,
-        num_imgs: int = 16,
+        num_imgs: int = 32,
         class_guidance: float = 3,
         seed: int = 10,
         scale_factor: int = 8,  # latent scaling before decoding - should be ~ std of latent space

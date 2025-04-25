@@ -19,8 +19,8 @@ import torch
 from einops import rearrange
 
 from .titok import TiTok
-from modeling.modules.blocks import TATiTokDecoder
-from modeling.quantizer.quantizer import VectorQuantizer, DiagonalGaussianDistribution
+from TitokTokenizer.modeling.modules.blocks import TATiTokDecoder
+from TitokTokenizer.modeling.quantizer.quantizer import VectorQuantizer, DiagonalGaussianDistribution
 from omegaconf import OmegaConf
 
 from huggingface_hub import PyTorchModelHubMixin

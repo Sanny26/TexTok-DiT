@@ -89,7 +89,7 @@ class SR_COCODataset(COCODataset):
         image, caption,lr_image = self._process(idx)
         return image, caption, lr_image
 
-def eval_gen(diffuser: DiffusionGenerator, labels: Tensor, img_size: int) -> Image:
+def eval_gen(diffuser: DiffusionGenerator, labels: Tensor, img_size: int, img_labels = None) -> Image:
     class_guidance = 4.5
     seed = 10
     
@@ -101,7 +101,8 @@ def eval_gen(diffuser: DiffusionGenerator, labels: Tensor, img_size: int) -> Ima
         n_iter=40,
         exponent=1,
         sharp_f=0.1,
-        img_size=img_size
+        img_size=img_size,
+        img_labels = img_labels
     )
 
     out = to_pil((vutils.make_grid((out + 1) / 2, nrow=8, padding=4)).float().clip(0, 1))
@@ -153,6 +154,10 @@ def main(config: ModelConfig) -> None:
     denoiser_config = config.denoiser_config
     train_config = config.train_config
     dataconfig = config.data_config
+    if config.use_titok or config.use_textok:
+        denoiser_config = config.denoiser_config
+    else:
+        denoiser_config = config.denoiser_old_config
 
     log_with="wandb" if train_config.use_wandb else None
     accelerator = Accelerator(mixed_precision="fp16", log_with=log_with)
@@ -180,10 +185,6 @@ def main(config: ModelConfig) -> None:
     if config.use_image_data:
         
         if not os.path.exists(dataconfig.lr_latent_path):
-        # if True:
-            # transform = transforms.Compose([
-            #     transforms.Resize((256, 256)),
-            # ])
             
             train_dataset = SR_COCODataset(img_dir=dataconfig.img_path,
                                 ann_file=dataconfig.img_ann_path,bsr_mode=True)
@@ -421,6 +422,8 @@ def main(config: ModelConfig) -> None:
                         if accelerator.is_main_process:
                             if config.use_titok:
                                 train_img = eval_gen_1D(diffuser=diffuser, labels=y[0].unsqueeze(0), n_tokens=denoiser_config.seq_len)
+                            else:
+                                train_img = eval_gen(diffuser = diffuser, labels=y[0].unsqueeze(0), img_size=denoiser_config.image_size, img_labels = z[0].unsqueeze(0))
                             accelerator.log({"train_img": wandb.Image(train_img)}, step=global_step)
                 
                 if accelerator.is_main_process:
@@ -436,12 +439,13 @@ if __name__ == "__main__":
     
     data_config = DataConfig()
 
-    denoiser_config = DenoiserConfig(super_res=True)
-    # denoiser_config = Denoiser1DConfig(super_res=True)
+    denoiser_old_config = DenoiserConfig(super_res=True)
+    denoiser_config = Denoiser1DConfig(super_res=True)
 
     model_cfg = ModelConfig(
         data_config=data_config,
         denoiser_config=denoiser_config,
+        denoiser_old_config=denoiser_old_config,
         train_config=TrainConfig(batch_size=128),
         use_titok=False,
     )

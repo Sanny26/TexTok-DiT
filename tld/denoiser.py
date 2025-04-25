@@ -207,6 +207,7 @@ class Denoiser(nn.Module):
         text_emb_size: int = 768,
         mlp_multiplier: int = 4,
         n_channels: int = 4,
+        image_emb_size: int = 768,
         super_res: bool = False
     ):
         super().__init__()
@@ -227,6 +228,7 @@ class Denoiser(nn.Module):
         self.denoiser_trans_block = DenoiserTransBlock(patch_size, image_size, embed_dim, dropout, n_layers, mlp_multiplier, n_channels)
         self.norm = nn.LayerNorm(self.embed_dim)
         self.label_proj = nn.Linear(text_emb_size, self.embed_dim)
+        self.image_proj = nn.Linear(2*image_emb_size, self.embed_dim)
 
     def forward(self, x, noise_level, label, image = None):
         noise_level = self.fourier_feats(noise_level).unsqueeze(1)
