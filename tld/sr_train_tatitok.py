@@ -40,7 +40,6 @@ import requests
 import time
 #torch seed
 # torch.manual_seed(0)
-torch.cuda.set_device(1)
 
 def add_text_to_image(img, text):
         if isinstance(img, torch.Tensor):
@@ -104,7 +103,7 @@ class SR_COCODataset(COCODataset):
         image, caption,lr_image = self._process(idx)
         return image, caption, lr_image
 
-def eval_gen(diffuser: DiffusionGenerator, labels: Tensor, img_size: int, img_labels = None) -> Image:
+def eval_gen(diffuser: DiffusionGenerator, labels: Tensor, img_size: int, img_labels = None, to_vis=False) -> Image:
     class_guidance = 4.5
     seed = 10
     
@@ -119,14 +118,15 @@ def eval_gen(diffuser: DiffusionGenerator, labels: Tensor, img_size: int, img_la
         exponent=1,
         sharp_f=0.1,
         img_size=img_size,
-        img_labels = img_labels
+        img_labels = img_labels,
+        to_vis=to_vis
     )
 
     out = to_pil((vutils.make_grid((out + 1) / 2, nrow=8, padding=4)).float().clip(0, 1))
     # out.save(f"emb_val_cfg:{class_guidance}_seed:{seed}.png")
     return out
 
-def eval_gen_1D(diffuser: DiffusionGenerator1D, labels: Tensor, n_tokens: int, labels_detokenizer = None, img_labels = None, image_cond_type:str = 'cross') -> Image:
+def eval_gen_1D(diffuser: DiffusionGenerator1D, labels: Tensor, n_tokens: int, labels_detokenizer = None, img_labels = None, image_cond_type:str = 'cross', to_vis=False) -> Image:
     class_guidance = 4.5
     seed = 10
     out, _ = diffuser.generate(
@@ -140,7 +140,8 @@ def eval_gen_1D(diffuser: DiffusionGenerator1D, labels: Tensor, n_tokens: int, l
         sharp_f=0.1,
         n_tokens=n_tokens,
         img_labels=img_labels,
-        image_cond_type=image_cond_type
+        image_cond_type=image_cond_type,
+        to_vis=to_vis
     )
     if labels_detokenizer is not None: #using tatitok
         # out = (torch.clamp(out, 0.0, 1.0)* 255.0).to(dtype=torch.uint8)
@@ -153,7 +154,7 @@ def eval_gen_1D(diffuser: DiffusionGenerator1D, labels: Tensor, n_tokens: int, l
 
 
 
-def eval_gen_1D_extensive(diffuser: DiffusionGenerator1D, gt_img: Tensor, labels: Tensor, n_tokens: int, labels_detokenizer = None, img_labels = None, class_guidance = [4.5, 4, 6, 8, 10, 15, 16, 18, 20, 50], image_cond_type:str = 'cross') -> Image:
+def eval_gen_1D_extensive(diffuser: DiffusionGenerator1D, gt_img: Tensor, labels: Tensor, n_tokens: int, labels_detokenizer = None, img_labels = None, class_guidance = [4.5, 4, 6, 8, 10, 15, 16, 18, 20, 50], image_cond_type:str = 'cross', to_vis=False) -> Image:
 
     seed = 10
     batch_size = labels.shape[0]
@@ -178,7 +179,8 @@ def eval_gen_1D_extensive(diffuser: DiffusionGenerator1D, gt_img: Tensor, labels
             sharp_f=0.1,
             n_tokens=n_tokens,
             img_labels=img_labels,
-            image_cond_type = image_cond_type
+            image_cond_type = image_cond_type,
+            to_vis=to_vis
         )
         text_caption += f" {guidance}  |  "
         generated_imgs.append(out)
@@ -426,7 +428,6 @@ def main(config: ModelConfig) -> None:
     accelerator.print(count_parameters_per_layer(model))
     
     save_model_cnt = 0
-    import pdb; pdb.set_trace()
     ### Train:
     for i in range(1, train_config.n_epoch + 1):
         accelerator.print(f"epoch: {i}")
@@ -504,9 +505,9 @@ def main(config: ModelConfig) -> None:
                     ##eval and saving:
                     if config.use_tatitok:
                         # out = eval_gen_1D(diffuser=diffuser, labels=y1_val, labels_detokenizer = y77_val, n_tokens=denoiser_config.seq_len, img_labels = z_val)
-                        out = eval_gen_1D_extensive(diffuser=diffuser, gt_img=gt_img[0:vis_images], labels=y1_val[0:vis_images], labels_detokenizer = y77_val[0:vis_images], n_tokens=denoiser_config.seq_len, img_labels = z_val[0:vis_images], image_cond_type=denoiser_config.image_cond_type)
+                        out = eval_gen_1D_extensive(diffuser=diffuser, gt_img=gt_img[0:vis_images], labels=y1_val[0:vis_images], labels_detokenizer = y77_val[0:vis_images], n_tokens=denoiser_config.seq_len, img_labels = z_val[0:vis_images], image_cond_type=denoiser_config.image_cond_type, to_vis=train_config.to_vis)
                     else:
-                        out = eval_gen(diffuser=diffuser, labels=y_val, img_size=denoiser_config.image_size, img_labels = z_val)
+                        out = eval_gen(diffuser=diffuser, labels=y_val, img_size=denoiser_config.image_size, img_labels = z_val, to_vis=train_config.to_vis)
                     
                     # out.save("img.jpg")
                     if train_config.use_wandb:
@@ -556,9 +557,9 @@ def main(config: ModelConfig) -> None:
                             ##eval and saving:
                             if config.use_tatitok:
                                 # out = eval_gen_1D(diffuser=diffuser, labels=y1_val, labels_detokenizer = y77_val, n_tokens=denoiser_config.seq_len, img_labels = z_val)
-                                out = eval_gen_1D_extensive(diffuser=diffuser, gt_img=gt_img[0:vis_images], labels=y1[0:vis_images], labels_detokenizer = y77[0:vis_images], n_tokens=denoiser_config.seq_len, img_labels = z[0:vis_images], image_cond_type=denoiser_config.image_cond_type)
+                                out = eval_gen_1D_extensive(diffuser=diffuser, gt_img=gt_img[0:vis_images], labels=y1[0:vis_images], labels_detokenizer = y77[0:vis_images], n_tokens=denoiser_config.seq_len, img_labels = z[0:vis_images], image_cond_type=denoiser_config.image_cond_type, to_vis=False)
                             else:
-                                out = eval_gen(diffuser=diffuser, labels=y_val, img_size=denoiser_config.image_size, img_labels = z_val)
+                                out = eval_gen(diffuser=diffuser, labels=y_val, img_size=denoiser_config.image_size, img_labels = z_val, to_vis=False)
                     
                             accelerator.log({"train_img": wandb.Image(out)}, step=global_step)
                 

@@ -47,21 +47,22 @@ class DenoiserTransBlock1D(nn.Module):
                     dropout_level=self.dropout,
                     # mlp_class=MLPSepConv, uses spatial on tokens, for patches makes sense
                     mlp_class=MLP,
+                    layer_num=i
                 )
-                for _ in range(self.n_layers)
+                for i in range(self.n_layers)
             ]
         )
 
         self.out_proj = nn.Linear(self.embed_dim, patch_dim)
 
-    def forward(self, x, cond, repeat=1):
+    def forward(self, x, cond, repeat=1, to_vis=False):
         # Convert input to high-dimensional embedding
         x = self.patch_embedding(x)  # B x seq_len x embed_dim
 
         pos_enc = self.precomputed_pos_enc[: x.size(1)].expand(x.size(0), -1).repeat(1,repeat)
         x = x + self.pos_embed(pos_enc)
         for block in self.decoder_blocks:
-            x = block(x, cond)
+            x = block(x, cond, to_vis=to_vis)
 
         return self.out_proj(x)
 
@@ -102,7 +103,7 @@ class Denoiser1D(nn.Module):
         self.label_proj = nn.Linear(text_emb_size, self.embed_dim)
         self.image_proj = nn.Linear(2*image_emb_size, self.embed_dim)
 
-    def forward(self, x, noise_level, label, image = None, image_cond_type = 'cross'):
+    def forward(self, x, noise_level, label, image = None, image_cond_type = 'cross', to_vis=False):
         x = x.permute(0, 2, 1)
         noise_level = self.fourier_feats(noise_level).unsqueeze(1)
 
@@ -118,10 +119,10 @@ class Denoiser1D(nn.Module):
         if image_cond_type == 'concat':
             image = image.permute(0,2,1)
             x = torch.cat([x, image], dim=1)
-            x = self.denoiser_trans_block(x, noise_label_emb, repeat = 2)
+            x = self.denoiser_trans_block(x, noise_label_emb, repeat = 2, to_vis=to_vis)
             x=x[:,:32,:]
         else:
-            x = self.denoiser_trans_block(x, noise_label_emb) #x: bs, 
+            x = self.denoiser_trans_block(x, noise_label_emb, to_vis_to_vis) #x: bs, 
         x = x.permute(0, 2, 1)
         return x
 
@@ -182,20 +183,21 @@ class DenoiserTransBlock(nn.Module):
                     is_causal=False,
                     dropout_level=self.dropout,
                     mlp_class=MLPSepConv,
+                    layer_num=i
                 )
-                for _ in range(self.n_layers)
+                for i in range(self.n_layers)
             ]
         )
 
         self.out_proj = nn.Sequential(nn.Linear(self.embed_dim, patch_dim), self.rearrange2)
 
-    def forward(self, x, cond):
+    def forward(self, x, cond, to_vis=False):
         x = self.patchify_and_embed(x)
         pos_enc = self.precomputed_pos_enc[: x.size(1)].expand(x.size(0), -1)
         x = x + self.pos_embed(pos_enc)
 
         for block in self.decoder_blocks:
-            x = block(x, cond)
+            x = block(x, cond, to_vis=to_vis)
 
         return self.out_proj(x)
 
@@ -232,7 +234,7 @@ class Denoiser(nn.Module):
         self.norm = nn.LayerNorm(self.embed_dim)
         self.label_proj = nn.Linear(text_emb_size, self.embed_dim)
 
-    def forward(self, x, noise_level, label, image = None):
+    def forward(self, x, noise_level, label, image = None, to_vis=False):
         noise_level = self.fourier_feats(noise_level).unsqueeze(1)
 
         label = self.label_proj(label).unsqueeze(1)
@@ -243,7 +245,7 @@ class Denoiser(nn.Module):
             noise_label_emb = torch.cat([noise_level, label], dim=1)  # bs, 2, d
         noise_label_emb = self.norm(noise_label_emb)
 
-        x = self.denoiser_trans_block(x, noise_label_emb)
+        x = self.denoiser_trans_block(x, noise_label_emb, to_vis=to_vis)
 
         return x
 
@@ -344,20 +346,21 @@ class DenoiserTransBlock(nn.Module):
                     is_causal=False,
                     dropout_level=self.dropout,
                     mlp_class=MLPSepConv,
+                    layer_num=i
                 )
-                for _ in range(self.n_layers)
+                for i in range(self.n_layers)
             ]
         )
 
         self.out_proj = nn.Sequential(nn.Linear(self.embed_dim, patch_dim), self.rearrange2)
 
-    def forward(self, x, cond):
+    def forward(self, x, cond, to_vis=False):
         x = self.patchify_and_embed(x)
         pos_enc = self.precomputed_pos_enc[: x.size(1)].expand(x.size(0), -1)
         x = x + self.pos_embed(pos_enc)
 
         for block in self.decoder_blocks:
-            x = block(x, cond)
+            x = block(x, cond, to_vis=to_vis)
 
         return self.out_proj(x)
 
@@ -397,7 +400,7 @@ class Denoiser(nn.Module):
         self.label_proj = nn.Linear(text_emb_size, self.embed_dim)
         self.image_proj = nn.Linear(2*image_emb_size, self.embed_dim)
 
-    def forward(self, x, noise_level, label, image):
+    def forward(self, x, noise_level, label, image, to_vis=False):
         noise_level = self.fourier_feats(noise_level).unsqueeze(1)
 
         label = self.label_proj(label).unsqueeze(1)
@@ -411,6 +414,6 @@ class Denoiser(nn.Module):
         noise_label_emb = self.norm(noise_label_emb)
         
         #x = torch.randn(64, 12, 32, 32).to('cuda')
-        x = self.denoiser_trans_block(x, noise_label_emb)
+        x = self.denoiser_trans_block(x, noise_label_emb, to_vis=to_vis)
 
         return x

@@ -45,7 +45,7 @@ class Denoiser1DConfig:
     mlp_multiplier: int = 4
     image_emb_size: int | None = 768
     super_res: bool = True
-    image_cond_type:str = 'concat'
+    image_cond_type: str = 'concat'
 
 @dataclass
 class DenoiserLoad:
@@ -84,8 +84,8 @@ class DataConfig:
     detokenizer_text_emb_path: str = "preprocess_tatitok_txt.npz"
     lr_latent_path: str = "preprocess_lr.npz"
     val_path: str = ""
-    img_path: str = "/data/adithya/train2017"
-    img_ann_path: str = "/home/adithya/HSL/test/mml/final_sub/TexTok-DiT/annotations/captions_train2017.json"
+    img_path: str = "/home/ubuntu/train2017/"
+    img_ann_path: str = "/home/ubuntu/annotations/captions_train2017.json"
 
 @dataclass
 class TrainConfig:
@@ -93,7 +93,7 @@ class TrainConfig:
     lr: float = 3e-4
     n_epoch: int = 250
     alpha: float = 0.999
-    from_scratch: bool = False
+    from_scratch: bool = True
     ##betas determine the distribution of noise seen during training
     beta_a: float = 1  
     beta_b: float = 2.5
@@ -105,6 +105,7 @@ class TrainConfig:
     compile: bool = True
     save_model: bool = True
     use_wandb: bool = True
+    to_vis = True
 
 
 @dataclass
